@@ -19,7 +19,7 @@ from .tokenizer import EncodedDecision, PokerTokenizer
 @dataclass(frozen=True)
 class PrepareOptions:
     block_size: int = 256
-    history_limit: int = 32
+    event_limit: int = 64
     max_member_bytes: int = 64 * 1024 * 1024
     max_members: int | None = None
     audit_samples: int = 20
@@ -69,14 +69,14 @@ def _sha256(path: Path) -> str:
 def _encode_with_limit(
     tokenizer: PokerTokenizer, decision: Decision, options: PrepareOptions
 ) -> EncodedDecision:
-    history_limit = min(options.history_limit, len(decision.history))
-    while history_limit >= 0:
-        encoded = tokenizer.encode_decision(decision, history_limit)
+    event_limit = min(options.event_limit, len(decision.events))
+    while event_limit >= 0:
+        encoded = tokenizer.encode_decision(decision, event_limit)
         if len(encoded.ids) <= options.block_size:
             return encoded
-        history_limit -= 1
+        event_limit -= 1
     raise ValueError(
-        f"Decision requires more than block_size={options.block_size} tokens without history"
+        f"Decision requires more than block_size={options.block_size} tokens without optional events"
     )
 
 
@@ -177,10 +177,12 @@ def prepare_dataset(
         "normalization": {
             "chip_arithmetic": "decimal_exact",
             "amount_features": ["incremental_chips_over_big_blind", "incremental_chips_over_pot_before_action"],
-            "amount_buckets": "see poker_pipeline.tokenizer.RATIO_LABELS",
+            "amount_buckets": "non-overlapping ranges in poker_pipeline.tokenizer.RATIO_LABELS",
         },
-        "privacy": "actor hole cards only; every opponent private card encoded CARD_UNKNOWN",
+        "privacy": "actor hole cards only; opponent private-card tokens are omitted",
         "legality": "not encoded or stored; replay validates source actions only",
+        "perspective": "acting player is PLAYER_1; other seats numbered clockwise",
+        "events": "forced posts, prior actions, and board reveal counts in chronological order",
         "loss": "action token plus amount buckets for BET/RAISE",
     }
     with (output_dir / "meta.pkl").open("wb") as handle:

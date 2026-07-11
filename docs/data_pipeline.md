@@ -40,14 +40,27 @@ the action.
 
 ## Information boundary
 
-Each player action creates a separate example. The example contains the acting
-player's two private cards, public cards dealt so far, current stacks/contributions,
-and observable action history. Legal actions are deliberately not encoded or
-stored: later evaluation should measure and penalize illegal model predictions
-with a poker engine. The preprocessor still checks that every observed source
-action is legal as a data-integrity assertion. All opponent private cards are
-encoded as `CARD_UNKNOWN`, even though Pluribus source files list all six hands at
-the start. Future board cards and showdown information are not included.
+Each player action creates a separate example. The acting player is always
+`PLAYER_1`; the other seats are numbered clockwise relative to that player. The
+example contains only `PLAYER_1`'s private cards. Opponent private-card tokens are
+omitted entirely, even though Pluribus source files list all six hands at the
+start. Future board cards, future actions, and showdown information are excluded.
+
+Poker street names are not encoded. Current public state is represented by
+`BOARD_COUNT_n` followed by the visible board cards. A chronological
+`<EVENT_SEQUENCE>` contains forced posts, prior player actions, and
+`BOARD_REVEAL_n` boundaries, which preserves when betting rounds changed without
+tokens such as `PREFLOP`, `FLOP`, `TURN`, or `RIVER`.
+
+Forced posts identify blind positions through observable events, for example
+`PLAYER_3 POST_BLIND BLIND_BB_0.5`. State features distinguish shared state
+(`POT_SIZE_BB_*`) from player-specific state (`PLAYER_1_TO_CALL_BB_*` and
+`PLAYER_1_STACK_BB_*`). Bucket labels are non-overlapping ranges.
+
+Legal actions are deliberately not encoded or stored: later evaluation should
+measure and penalize illegal model predictions with a poker engine. The
+preprocessor still checks that every observed source action is legal as a
+data-integrity assertion.
 
 ## Splitting
 

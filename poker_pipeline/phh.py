@@ -31,6 +31,22 @@ class HistoryAction:
 
 
 @dataclass(frozen=True)
+class ForcedPost:
+    player: int
+    kind: str
+    amount: Decimal
+    amount_bb: Decimal
+
+
+@dataclass(frozen=True)
+class BoardReveal:
+    count: int
+
+
+HandEvent = HistoryAction | ForcedPost | BoardReveal
+
+
+@dataclass(frozen=True)
 class Decision:
     member: str
     hand_key: str
@@ -46,7 +62,7 @@ class Decision:
     hero_stack: Decimal
     effective_stack: Decimal
     legal_actions: tuple[str, ...]
-    history: tuple[HistoryAction, ...]
+    events: tuple[HandEvent, ...]
     target_action: str
     target_amount: Decimal = Decimal(0)
     target_amount_bb: Decimal = Decimal(0)
@@ -67,7 +83,7 @@ class ReplayState:
     board: list[str] = field(default_factory=list)
     street: str = "PREFLOP"
     current_bet: Decimal = Decimal(0)
-    history: list[HistoryAction] = field(default_factory=list)
+    events: list[HandEvent] = field(default_factory=list)
 
     @property
     def pot(self) -> Decimal:
@@ -168,9 +184,21 @@ def _initial_state(member: str, hand_key: str, hand: dict[str, Any]) -> ReplaySt
     big_blind = min_bet or (max(positive_blinds) if positive_blinds else 0.0)
     if big_blind <= 0:
         raise HandParseError("Could not determine a positive big blind/minimum bet")
-    posted = [min(stack, ante + blind) for stack, ante, blind in zip(starting_stacks, antes, blinds)]
+    ante_posts = [min(stack, ante) for stack, ante in zip(starting_stacks, antes)]
+    after_antes = [stack - ante for stack, ante in zip(starting_stacks, ante_posts)]
+    blind_posts = [min(stack, blind) for stack, blind in zip(after_antes, blinds)]
+    posted = [ante + blind for ante, blind in zip(ante_posts, blind_posts)]
     stacks = [stack - contribution for stack, contribution in zip(starting_stacks, posted)]
-    street_contrib = [min(blind, posted_value) for blind, posted_value in zip(blinds, posted)]
+    street_contrib = list(blind_posts)
+    events: list[HandEvent] = []
+    for player, amount in enumerate(ante_posts):
+        if amount > 0:
+            events.append(ForcedPost(player, "POST_ANTE", amount, amount / big_blind))
+    positive_blind_players = [player for player, amount in enumerate(blind_posts) if amount > 0]
+    for order, player in enumerate(positive_blind_players):
+        kind = "POST_BLIND" if order < 2 else "POST_STRADDLE"
+        amount = blind_posts[player]
+        events.append(ForcedPost(player, kind, amount, amount / big_blind))
     return ReplayState(
         member=member,
         hand_key=hand_key,
@@ -180,6 +208,7 @@ def _initial_state(member: str, hand_key: str, hand: dict[str, Any]) -> ReplaySt
         street_contrib=street_contrib,
         total_contrib=posted,
         active=[True] * count,
+        events=events,
         current_bet=max(street_contrib, default=0.0),
     )
 
@@ -212,7 +241,7 @@ def _decision(
         hero_stack=state.stacks[actor],
         effective_stack=effective,
         legal_actions=state.legal_actions(actor),
-        history=tuple(state.history),
+        events=tuple(state.events),
         target_action=target,
         target_amount=delta,
         target_amount_bb=delta / state.big_blind,
@@ -241,6 +270,7 @@ def replay_hand(member: str, hand_key: str, hand: dict[str, Any]) -> Iterator[De
         if board:
             cards = split_cards(board.group(1))
             state.board.extend(cards)
+            state.events.append(BoardReveal(len(cards)))
             state.street = {3: "FLOP", 4: "TURN", 5: "RIVER"}.get(len(state.board), state.street)
             state.street_contrib = [Decimal(0)] * state.player_count
             state.current_bet = Decimal(0)
@@ -289,7 +319,7 @@ def replay_hand(member: str, hand_key: str, hand: dict[str, Any]) -> Iterator[De
             state.street_contrib[actor] += contribution
             state.total_contrib[actor] += contribution
             state.current_bet = max(state.current_bet, state.street_contrib[actor])
-            state.history.append(
+            state.events.append(
                 HistoryAction(
                     player=actor,
                     street=state.street,
