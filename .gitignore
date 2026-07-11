@@ -1,0 +1,13 @@
+poker-hand-histories.zip
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+
+# Generated test and production artifacts
+test/artifacts/
+data/processed/
+output/
+*.bin
+*.pkl
+
