@@ -1,0 +1,2 @@
+torch>=2.1
+jupyterlab>=4.0

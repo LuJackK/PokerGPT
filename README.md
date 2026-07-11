@@ -23,3 +23,24 @@ python -m unittest discover -s test -v
 See each command's `--help` for limits and validation options.
 Dataset-specific decisions and observed quirks are documented in
 `docs/data_pipeline.md`.
+
+## Model
+
+`poker_model/model.py` contains the nanoGPT-style causal Transformer used by
+PokerGPT. It keeps nanoGPT's pre-norm blocks, causal self-attention, GELU MLP,
+weight tying, GPT-2 initialization, and AdamW grouping, while adding masked
+next-token loss for the pipeline's decision-token masks and an optional legal
+token restriction during generation.
+
+```python
+from poker_model import GPT, GPTConfig
+
+config = GPTConfig(vocab_size=meta["vocab_size"], block_size=meta["block_size"])
+model = GPT(config)
+```
+
+PyTorch 2.x is recommended so attention uses its optimized scaled-dot-product
+implementation.
+
+Install the model/notebook dependencies with `pip install -r requirements-model.txt`,
+then open `notebooks/01_model_architecture.ipynb`.
