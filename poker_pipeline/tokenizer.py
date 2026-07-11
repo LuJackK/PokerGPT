@@ -47,7 +47,6 @@ def build_vocabulary() -> list[str]:
     tokens += ["PLAYER_HERO"] + [f"PLAYER_REL_{seat}" for seat in range(1, 10)]
     tokens += ["CARD_UNKNOWN"] + [f"CARD_{rank}{suit}" for rank in RANKS for suit in SUITS]
     tokens += [f"BOARD_COUNT_{count}" for count in range(6)]
-    tokens += [f"LEGAL_{action}" for action in ACTIONS]
     tokens += [f"ACTION_{action}" for action in ACTIONS]
     tokens += [f"HIST_STREET_{street}" for street in STREETS]
     for prefix in ("POT_BB", "CALL_BB", "STACK_BB", "EFFECTIVE_BB", "AMOUNT_BB", "AMOUNT_POT"):
@@ -99,7 +98,6 @@ class PokerTokenizer:
             f"STACK_BB_{ratio_label(decision.hero_stack / bb)}",
             f"EFFECTIVE_BB_{ratio_label(decision.effective_stack / bb)}",
         ]
-        tokens += [f"LEGAL_{action}" for action in decision.legal_actions]
         tokens.append("<HISTORY>")
         history = decision.history[-history_limit:]
         if not history:

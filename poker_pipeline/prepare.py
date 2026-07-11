@@ -180,6 +180,7 @@ def prepare_dataset(
             "amount_buckets": "see poker_pipeline.tokenizer.RATIO_LABELS",
         },
         "privacy": "actor hole cards only; every opponent private card encoded CARD_UNKNOWN",
+        "legality": "not encoded or stored; replay validates source actions only",
         "loss": "action token plus amount buckets for BET/RAISE",
     }
     with (output_dir / "meta.pkl").open("wb") as handle:

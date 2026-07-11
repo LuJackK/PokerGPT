@@ -42,7 +42,10 @@ the action.
 
 Each player action creates a separate example. The example contains the acting
 player's two private cards, public cards dealt so far, current stacks/contributions,
-legal action types, and observable action history. All opponent private cards are
+and observable action history. Legal actions are deliberately not encoded or
+stored: later evaluation should measure and penalize illegal model predictions
+with a poker engine. The preprocessor still checks that every observed source
+action is legal as a data-integrity assertion. All opponent private cards are
 encoded as `CARD_UNKNOWN`, even though Pluribus source files list all six hands at
 the start. Future board cards and showdown information are not included.
 
@@ -65,4 +68,3 @@ session in both splits.
 
 Use `validate_artifacts.py` after preprocessing to verify framing, lengths, token
 ranges, loss-mask placement, and split-group isolation.
-

@@ -98,12 +98,15 @@ class PipelineTests(unittest.TestCase):
     def test_tokenizer_masks_opponent_cards_and_future_board(self) -> None:
         hand = parse_document(HAND_1, "phh")[0][1]
         first = next(replay_hand("fixture.phh", "1", hand))
-        encoded = PokerTokenizer().encode_decision(first)
+        tokenizer = PokerTokenizer()
+        encoded = tokenizer.encode_decision(first)
         self.assertIn("CARD_8h", encoded.tokens)  # acting player's cards
         self.assertIn("CARD_5h", encoded.tokens)
         self.assertNotIn("CARD_6s", encoded.tokens)  # opponent private card
         self.assertNotIn("CARD_Ah", encoded.tokens)  # future flop card
         self.assertEqual(encoded.tokens.count("CARD_UNKNOWN"), 10)
+        self.assertFalse(any(token.startswith("LEGAL_") for token in encoded.tokens))
+        self.assertFalse(any(token.startswith("LEGAL_") for token in tokenizer.itos))
         target_positions = [i for i, bit in enumerate(encoded.loss_mask) if bit]
         self.assertEqual([encoded.tokens[i] for i in target_positions], ["ACTION_FOLD"])
 
