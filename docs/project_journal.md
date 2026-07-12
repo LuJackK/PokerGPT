@@ -212,6 +212,46 @@ into the middle of a hand or join separate hands into one attention context.
 
 **Related commit.** `cc67075`.
 
+## 2026-07-12 - Decision-time observations and locality review
+
+**Current implemented status.** Complete chronological hero trajectories remain
+intact. Immediately before every `<PLAYER_1_DECISION>`, the tokenizer already
+repeats the current public state that cannot be reconstructed exactly from
+bucketed history:
+
+- current pot size;
+- amount `PLAYER_1` must call;
+- every active or all-in player's current status and stack.
+
+Folded players are not repeated because their fold events remain earlier in the
+same trajectory. Hero cards currently appear in the trajectory header, and board
+cards currently appear at their causal `BOARD_REVEAL` events.
+
+**Proposal under review, not yet implemented.** Repeat the hero's hole cards and
+complete currently visible board inside every decision observation, and possibly
+repeat compact blind-seat orientation. This would make the most strategically
+important cards locally accessible without replacing or summarizing the betting
+history. A separate street token remains unnecessary because current board count
+already determines the betting phase.
+
+**Measured context impact.** Across all 58,942 trajectories:
+
+- current format: median 44, 99th percentile 155, maximum 218;
+- repeating hole cards and current board: median 46, 99th percentile 194,
+  maximum 271, with five trajectories above 256;
+- also repeating blind-seat orientation: estimated median 50, 99th percentile
+  216, maximum approximately 299.
+
+**Implication.** If the local card/board and blind-seat proposal is implemented,
+the context should increase from 256 to approximately 320. History must not be
+truncated to preserve the old limit. Street-start snapshots, active-player count,
+and last-aggressor summaries remain unnecessary because decision-time state and
+the chronological trajectory already contain that information.
+
+**Open implementation detail.** Minimum-raise state may be useful to an active
+player, but it should wait until full-raise, all-in under-raise, and action-reopen
+semantics are represented accurately. It is not currently encoded.
+
 ## Current open questions
 
 - Finalize training hyperparameters and compute budget for the first baseline.
@@ -225,4 +265,5 @@ into the middle of a hand or join separate hands into one attention context.
 - Revisit amount-bucket boundaries using empirical sizing distributions.
 - Measure whether explicit per-player stacks improve validation accuracy relative
   to a smaller summary-state representation.
-
+- Decide whether to implement decision-local hero cards, current board, and blind
+  seats with a 320-token context based on the measured locality tradeoff.
