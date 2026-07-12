@@ -24,7 +24,8 @@ python -m unittest discover -s test -v
 
 See each command's `--help` for limits and validation options.
 Dataset-specific decisions and observed quirks are documented in
-`docs/data_pipeline.md`.
+`docs/data_pipeline.md`. The chronological decision and progress record is in
+`docs/project_journal.md` and is maintained as source material for the final report.
 
 ## Model
 
