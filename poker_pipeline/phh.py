@@ -40,7 +40,11 @@ class ForcedPost:
 
 @dataclass(frozen=True)
 class BoardReveal:
-    count: int
+    cards: tuple[str, ...]
+
+    @property
+    def count(self) -> int:
+        return len(self.cards)
 
 
 HandEvent = HistoryAction | ForcedPost | BoardReveal
@@ -61,12 +65,31 @@ class Decision:
     big_blind: Decimal
     hero_stack: Decimal
     effective_stack: Decimal
+    player_stacks: tuple[Decimal, ...]
+    player_statuses: tuple[str, ...]
     legal_actions: tuple[str, ...]
     events: tuple[HandEvent, ...]
     target_action: str
     target_amount: Decimal = Decimal(0)
     target_amount_bb: Decimal = Decimal(0)
     target_amount_pot: Decimal = Decimal(0)
+
+
+TrajectoryItem = HandEvent | Decision
+
+
+@dataclass(frozen=True)
+class HeroTrajectory:
+    member: str
+    hand_key: str
+    hero: int
+    player_count: int
+    hero_cards: tuple[str, ...]
+    items: tuple[TrajectoryItem, ...]
+
+    @property
+    def decision_count(self) -> int:
+        return sum(isinstance(item, Decision) for item in self.items)
 
 
 @dataclass
@@ -226,6 +249,10 @@ def _decision(
         delta = Decimal(0)
     opponents = [state.stacks[i] for i in range(state.player_count) if i != actor and state.active[i]]
     effective = min(state.stacks[actor], max(opponents, default=Decimal(0)))
+    statuses = tuple(
+        "FOLDED" if not state.active[player] else "ALL_IN" if state.stacks[player] <= 0 else "ACTIVE"
+        for player in range(state.player_count)
+    )
     return Decision(
         member=state.member,
         hand_key=state.hand_key,
@@ -240,6 +267,8 @@ def _decision(
         big_blind=state.big_blind,
         hero_stack=state.stacks[actor],
         effective_stack=effective,
+        player_stacks=tuple(state.stacks),
+        player_statuses=statuses,
         legal_actions=state.legal_actions(actor),
         events=tuple(state.events),
         target_action=target,
@@ -270,7 +299,7 @@ def replay_hand(member: str, hand_key: str, hand: dict[str, Any]) -> Iterator[De
         if board:
             cards = split_cards(board.group(1))
             state.board.extend(cards)
-            state.events.append(BoardReveal(len(cards)))
+            state.events.append(BoardReveal(cards))
             state.street = {3: "FLOP", 4: "TURN", 5: "RIVER"}.get(len(state.board), state.street)
             state.street_contrib = [Decimal(0)] * state.player_count
             state.current_bet = Decimal(0)
@@ -337,11 +366,65 @@ def replay_hand(member: str, hand_key: str, hand: dict[str, Any]) -> Iterator[De
         raise HandParseError("Hand contains no player decisions")
 
 
-def iter_archive_decisions(
+def _target_event(decision: Decision) -> HistoryAction:
+    return HistoryAction(
+        player=decision.actor,
+        street=decision.street,
+        action=decision.target_action,
+        amount=decision.target_amount,
+        amount_bb=decision.target_amount_bb,
+        amount_pot=decision.target_amount_pot,
+    )
+
+
+def build_hero_trajectories(decisions: list[Decision]) -> list[HeroTrajectory]:
+    """Create one complete causal trajectory for each acting player in a hand."""
+    by_hero: dict[int, list[Decision]] = {}
+    for decision in decisions:
+        by_hero.setdefault(decision.actor, []).append(decision)
+    trajectories: list[HeroTrajectory] = []
+    for hero, hero_decisions in sorted(by_hero.items()):
+        hero_cards = hero_decisions[0].hero_cards
+        if len(hero_cards) != 2 or any(card == "??" for card in hero_cards):
+            continue
+        final_decision = hero_decisions[-1]
+        complete_events = list(final_decision.events) + [_target_event(final_decision)]
+        decisions_by_event_index = {len(decision.events): decision for decision in hero_decisions}
+        items: list[TrajectoryItem] = []
+        for event_index, event in enumerate(complete_events):
+            decision = decisions_by_event_index.get(event_index)
+            if decision is None:
+                items.append(event)
+                continue
+            if not isinstance(event, HistoryAction) or event.player != hero:
+                raise HandParseError(
+                    f"Could not align hero decision with event {event_index} in "
+                    f"{decision.member}:{decision.hand_key}"
+                )
+            items.append(decision)
+        if len(items) == 0 or sum(isinstance(item, Decision) for item in items) != len(hero_decisions):
+            raise HandParseError(
+                f"Incomplete trajectory for player {hero + 1} in "
+                f"{final_decision.member}:{final_decision.hand_key}"
+            )
+        trajectories.append(
+            HeroTrajectory(
+                member=final_decision.member,
+                hand_key=final_decision.hand_key,
+                hero=hero,
+                player_count=final_decision.player_count,
+                hero_cards=hero_cards,
+                items=tuple(items),
+            )
+        )
+    return trajectories
+
+
+def iter_archive_hand_decisions(
     zip_path: Path,
     members: list[dict[str, Any]],
     max_member_bytes: int = 64 * 1024 * 1024,
-) -> Iterator[tuple[dict[str, Any], Decision | None, str | None]]:
+) -> Iterator[tuple[dict[str, Any], list[Decision] | None, str | None]]:
     with zipfile.ZipFile(zip_path) as archive:
         archive_names = set(archive.namelist())
         for selection in members:
@@ -351,10 +434,26 @@ def iter_archive_decisions(
                 continue
             try:
                 hands = read_member_hands(archive, member, max_member_bytes)
-                member_decisions: list[Decision] = []
+                parsed_hands: list[list[Decision]] = []
                 for hand_key, hand in hands:
-                    member_decisions.extend(replay_hand(member, hand_key, hand))
-                for decision in member_decisions:
-                    yield selection, decision, None
+                    parsed_hands.append(list(replay_hand(member, hand_key, hand)))
+                for decisions in parsed_hands:
+                    yield selection, decisions, None
             except (HandParseError, UnicodeDecodeError, KeyError, zipfile.BadZipFile) as exc:
                 yield selection, None, f"{type(exc).__name__}:{exc}"
+
+
+def iter_archive_decisions(
+    zip_path: Path,
+    members: list[dict[str, Any]],
+    max_member_bytes: int = 64 * 1024 * 1024,
+) -> Iterator[tuple[dict[str, Any], Decision | None, str | None]]:
+    for selection, decisions, error in iter_archive_hand_decisions(
+        zip_path, members, max_member_bytes
+    ):
+        if error:
+            yield selection, None, error
+            continue
+        assert decisions is not None
+        for decision in decisions:
+            yield selection, decision, None

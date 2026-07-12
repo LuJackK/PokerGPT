@@ -18,6 +18,7 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
     itos = meta["itos"]
     bos_id = meta["stoi"]["<BOS>"]
     eos_id = meta["stoi"]["<EOS>"]
+    decision_id = meta["stoi"]["<PLAYER_1_DECISION>"]
     block_size = int(meta["block_size"])
     report: dict[str, Any] = {"splits": {}, "errors": []}
 
@@ -56,13 +57,23 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
                 report["errors"].append(f"{split}: example {number} has no supervised token")
             for index in example_masked:
                 token = itos[tokens[index]]
-                if not (token.startswith("ACTION_") or token.startswith("AMOUNT_")):
+                if not (token.startswith("ACTION_") or token.startswith("RANGE_")):
                     report["errors"].append(
                         f"{split}: invalid supervised token {token} at token {index}"
                     )
+            decision_count = sum(tokens[index] == decision_id for index in range(start, end))
+            supervised_actions = sum(
+                masks[index] and itos[tokens[index]].startswith("ACTION_")
+                for index in range(start, end)
+            )
+            if decision_count != supervised_actions:
+                report["errors"].append(
+                    f"{split}: trajectory {number} has {decision_count} decision markers "
+                    f"but {supervised_actions} supervised actions"
+                )
             masked += len(example_masked)
         report["splits"][split] = {
-            "examples": len(offsets),
+            "trajectories": len(offsets),
             "tokens": len(tokens),
             "supervised_tokens": masked,
             "min_sequence": min(lengths, default=0),
@@ -91,4 +102,3 @@ def write_validation_report(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     return report
-

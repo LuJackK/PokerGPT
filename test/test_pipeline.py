@@ -11,7 +11,7 @@ from pathlib import Path
 
 from poker_pipeline.io_utils import read_jsonl
 from poker_pipeline.manifest import ManifestOptions, build_manifest
-from poker_pipeline.phh import parse_document, replay_hand
+from poker_pipeline.phh import build_hero_trajectories, parse_document, replay_hand
 from poker_pipeline.prepare import PrepareOptions, prepare_dataset
 from poker_pipeline.selection import SelectionOptions, select_dataset
 from poker_pipeline.tokenizer import PokerTokenizer, ratio_label
@@ -102,21 +102,22 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(ratio_label(Decimal("2.5")), "2_TO_3")
         self.assertEqual(ratio_label(Decimal("75")), "GT_50")
 
-    def test_tokenizer_omits_opponent_cards_and_uses_relative_events(self) -> None:
+    def test_tokenizer_builds_complete_relative_hero_trajectories(self) -> None:
         hand = parse_document(HAND_1, "phh")[0][1]
-        first = next(replay_hand("fixture.phh", "1", hand))
+        decisions = list(replay_hand("fixture.phh", "1", hand))
+        trajectories = build_hero_trajectories(decisions)
         tokenizer = PokerTokenizer()
-        encoded = tokenizer.encode_decision(first)
+        early_fold = next(trajectory for trajectory in trajectories if trajectory.hero == 2)
+        encoded = tokenizer.encode_trajectory(early_fold)
         self.assertIn("CARD_8h", encoded.tokens)  # acting player's cards
         self.assertIn("CARD_5h", encoded.tokens)
         self.assertNotIn("CARD_6s", encoded.tokens)  # opponent private card
         self.assertNotIn("CARD_Ah", encoded.tokens)  # future flop card
-        self.assertEqual(encoded.tokens.count("CARD_UNKNOWN"), 0)
         self.assertIn("PLAYER_5", encoded.tokens)  # original p1, relative to hero p3
         self.assertIn("PLAYER_6", encoded.tokens)  # original p2, relative to hero p3
-        self.assertIn("BLIND_BB_0.5", encoded.tokens)
-        self.assertIn("BLIND_BB_1", encoded.tokens)
-        self.assertIn("<EVENT_SEQUENCE>", encoded.tokens)
+        self.assertIn("VALUE_BB_0.5", encoded.tokens)
+        self.assertIn("VALUE_BB_1", encoded.tokens)
+        self.assertNotIn("<EVENT_SEQUENCE>", encoded.tokens)
         self.assertFalse(any(token.startswith("STREET_") for token in encoded.tokens))
         self.assertFalse(any(token.startswith("HIST_STREET_") for token in encoded.tokens))
         self.assertFalse(any(token.startswith("PLAYER_REL_") for token in encoded.tokens))
@@ -125,15 +126,20 @@ class PipelineTests(unittest.TestCase):
         target_positions = [i for i, bit in enumerate(encoded.loss_mask) if bit]
         self.assertEqual([encoded.tokens[i] for i in target_positions], ["ACTION_FOLD"])
 
-        flop_check = next(
-            decision
-            for decision in replay_hand("fixture.phh", "1", hand)
-            if decision.street == "FLOP" and decision.target_action == "CHECK"
-        )
-        flop_tokens = tokenizer.encode_decision(flop_check).tokens
-        self.assertIn("BOARD_COUNT_3", flop_tokens)
-        self.assertIn("BOARD_REVEAL_3", flop_tokens)
-        self.assertIn("CARD_9s", flop_tokens)
+        multi_decision = next(trajectory for trajectory in trajectories if trajectory.hero == 0)
+        full = tokenizer.encode_trajectory(multi_decision)
+        self.assertEqual(full.tokens.count("<PLAYER_1_DECISION>"), multi_decision.decision_count)
+        self.assertIn("BOARD_REVEAL", full.tokens)
+        self.assertIn("COUNT_3", full.tokens)
+        self.assertIn("CARD_9s", full.tokens)
+        self.assertIn("POT_SIZE_BB", full.tokens)
+        self.assertFalse(any(token.startswith("POT_SIZE_BB_") for token in full.tokens))
+        supervised_actions = [
+            full.tokens[index]
+            for index, bit in enumerate(full.loss_mask)
+            if bit and full.tokens[index].startswith("ACTION_")
+        ]
+        self.assertEqual(len(supervised_actions), multi_decision.decision_count)
 
     def test_end_to_end_binary_alignment_and_metadata(self) -> None:
         selection = self.root / "selected.jsonl"
@@ -159,20 +165,21 @@ class PipelineTests(unittest.TestCase):
             output,
             PrepareOptions(block_size=256, audit_samples=2),
         )
-        self.assertGreater(stats["writer_examples"]["train"], 0)
-        self.assertGreater(stats["writer_examples"]["val"], 0)
+        self.assertGreater(stats["writer_trajectories"]["train"], 0)
+        self.assertGreater(stats["writer_trajectories"]["val"], 0)
         for split in ("train", "val"):
             token_bytes = (output / f"{split}.bin").read_bytes()
             masks = (output / f"{split}_loss_mask.bin").read_bytes()
             indexes = (output / f"{split}.idx").read_bytes()
             self.assertEqual(len(token_bytes) // 2, len(masks))
-            self.assertEqual(len(indexes) // 8, stats["writer_examples"][split])
+            self.assertEqual(len(indexes) // 8, stats["writer_trajectories"][split])
             if indexes:
                 self.assertEqual(struct.unpack("<Q", indexes[:8])[0], 0)
         with (output / "meta.pkl").open("rb") as handle:
             meta = pickle.load(handle)
         self.assertEqual(meta["token_dtype"], "uint16_le")
-        self.assertEqual(meta["privacy"], "actor hole cards only; opponent private-card tokens are omitted")
+        self.assertEqual(meta["format"], "complete_player_perspective_trajectories_v1")
+        self.assertEqual(meta["privacy"], "one complete trajectory per hero; opponent private cards omitted")
         self.assertEqual(json.loads((output / "stats.json").read_text())["parse_error_count"], 0)
         validation = validate_artifacts(output, selection)
         self.assertTrue(validation["valid"], validation["errors"])

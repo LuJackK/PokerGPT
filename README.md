@@ -3,6 +3,8 @@
 Streaming preprocessing for PokerKit PHH/PHHS hand histories. The source ZIP is
 never extracted: archive members are inspected and parsed one at a time.
 The selector defaults to the clean six-player Pluribus `NT` corpus.
+Preprocessing writes complete player-perspective hand trajectories with multiple
+supervised hero decisions rather than independent decision snapshots.
 
 ## Pipeline
 
@@ -29,14 +31,15 @@ Dataset-specific decisions and observed quirks are documented in
 `poker_model/model.py` contains the nanoGPT-style causal Transformer used by
 PokerGPT. It keeps nanoGPT's pre-norm blocks, causal self-attention, GELU MLP,
 weight tying, GPT-2 initialization, and AdamW grouping, while adding masked
-next-token loss for the pipeline's decision-token masks and an optional legal
-token restriction during generation.
+next-token loss for the pipeline's decision-token masks. Generation returns raw
+predictions so a poker engine can measure and penalize illegal moves.
 
 ```python
-from poker_model import GPT, GPTConfig
+from poker_model import GPT, GPTConfig, PokerTrajectoryDataset
 
 config = GPTConfig(vocab_size=meta["vocab_size"], block_size=meta["block_size"])
 model = GPT(config)
+train_data = PokerTrajectoryDataset("data/processed", "train")
 ```
 
 PyTorch 2.x is recommended so attention uses its optimized scaled-dot-product

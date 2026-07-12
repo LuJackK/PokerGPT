@@ -206,19 +206,14 @@ class GPT(nn.Module):
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: int | None = None,
-        allowed_token_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        """Autoregressively sample, optionally restricting every step to legal token IDs."""
+        """Autoregressively sample raw model predictions for later engine evaluation."""
         if temperature <= 0:
             raise ValueError("temperature must be positive")
         for _ in range(max_new_tokens):
             context = idx[:, -self.config.block_size :]
             logits, _ = self(context)
             logits = logits[:, -1, :] / temperature
-            if allowed_token_ids is not None:
-                legal = torch.zeros_like(logits, dtype=torch.bool)
-                legal[:, allowed_token_ids.to(logits.device)] = True
-                logits = logits.masked_fill(~legal, float("-inf"))
             if top_k is not None:
                 values, _ = torch.topk(logits, min(top_k, logits.size(-1)))
                 logits = logits.masked_fill(logits < values[:, [-1]], float("-inf"))

@@ -13,7 +13,6 @@ def main() -> None:
     parser.add_argument("--selection", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--block-size", type=int, default=256)
-    parser.add_argument("--event-limit", type=int, default=64)
     parser.add_argument("--max-member-mib", type=float, default=64.0)
     parser.add_argument("--max-members", type=int)
     parser.add_argument("--audit-samples", type=int, default=20)
@@ -22,7 +21,6 @@ def main() -> None:
         parser.error("--block-size must be at least 64")
     options = PrepareOptions(
         block_size=args.block_size,
-        event_limit=args.event_limit,
         max_member_bytes=int(args.max_member_mib * 1024 * 1024),
         max_members=args.max_members,
         audit_samples=args.audit_samples,

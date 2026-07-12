@@ -38,46 +38,70 @@ Chip arithmetic uses `Decimal`. Amount features are bucketed both as incremental
 chips divided by the big blind and incremental chips divided by the pot before
 the action.
 
-## Information boundary
+## Complete hero trajectories
 
-Each player action creates a separate example. The acting player is always
-`PLAYER_1`; the other seats are numbered clockwise relative to that player. The
-example contains only `PLAYER_1`'s private cards. Opponent private-card tokens are
-omitted entirely, even though Pluribus source files list all six hands at the
-start. Future board cards, future actions, and showdown information are excluded.
+The training unit is one complete causal trajectory for each player who makes a
+decision in a hand. That hero is always `PLAYER_1`; other seats are numbered
+clockwise. Only the hero's private cards are included. All public events before
+the hero's final decision remain in chronological order, and opponent private
+cards, future events, and showdown-only information are omitted.
 
-Poker street names are not encoded. Current public state is represented by
-`BOARD_COUNT_n` followed by the visible board cards. A chronological
-`<EVENT_SEQUENCE>` contains forced posts, prior player actions, and
-`BOARD_REVEAL_n` boundaries, which preserves when betting rounds changed without
-tokens such as `PREFLOP`, `FLOP`, `TURN`, or `RIVER`.
+A trajectory may contain several `<PLAYER_1_DECISION>` observations and targets.
+Loss is applied only to the hero's action token and, for bets and raises, the two
+sizing-range tokens. Opponent actions, forced posts, state fields, and board
+reveals remain context with zero loss.
 
-Forced posts identify blind positions through observable events, for example
-`PLAYER_3 POST_BLIND BLIND_BB_0.5`. State features distinguish shared state
-(`POT_SIZE_BB_*`) from player-specific state (`PLAYER_1_TO_CALL_BB_*` and
-`PLAYER_1_STACK_BB_*`). Bucket labels are non-overlapping ranges.
+There is no `<HISTORY>` or `<EVENT_SEQUENCE>` wrapper: the trajectory itself is
+the history. Board cards enter causally as events such as
+`BOARD_REVEAL COUNT_3 CARD_Qs CARD_7h CARD_2c`. Poker street names are not tokens.
 
-Legal actions are deliberately not encoded or stored: later evaluation should
-measure and penalize illegal model predictions with a poker engine. The
-preprocessor still checks that every observed source action is legal as a
-data-integrity assertion.
+Before each hero decision, the sequence contains the observable pot, call amount,
+and active/all-in player stack states. Players already known to have folded are
+not repeated in later state observations because their fold events remain in the
+trajectory.
+
+Numerical values use compositional tokens. For example,
+`POT_SIZE_BB RANGE_5_TO_10` reuses the same `RANGE_5_TO_10` token used by stack
+and action-amount fields. This avoids a separate field-by-range vocabulary entry.
+The fixed vocabulary has 111 tokens.
+
+Legal actions are deliberately not encoded or stored. Replay checks source action
+legality for data integrity, while later evaluation should measure and penalize
+raw illegal model predictions with a poker engine.
+
+## Context length and batching
+
+Across all 10,000 Pluribus hands, preprocessing creates 58,942 complete hero
+trajectories containing 91,356 supervised decisions. Length statistics are:
+
+- median: 44 tokens;
+- 95th percentile: 128 tokens;
+- 99th percentile: 155 tokens;
+- maximum: 218 tokens.
+
+Every trajectory fits a 256-token context without truncation. Preprocessing fails
+if a future trajectory exceeds `block_size`; it never discards early hand history.
+
+`PokerTrajectoryDataset` uses `.idx` boundaries to load complete trajectories.
+It creates shifted next-token inputs/targets, shifts the stored loss mask with the
+targets, and right-pads within a batch. It never random-crops into the middle of a
+hand or joins two hands into one attention context.
 
 ## Splitting
 
 Pluribus hand numbers repeat across session folders. Train/validation assignment
-therefore groups by session directory, then uses deterministic size-aware group
-assignment to approximate the requested validation fraction without putting a
-session in both splits.
+groups by session directory, then uses deterministic size-aware group assignment.
+All hero perspectives derived from the same hand therefore remain in one split.
 
 ## Binary format
 
-- `train.bin` / `val.bin`: little-endian `uint16` token IDs.
-- `*_loss_mask.bin`: aligned `uint8` masks. Action targets are supervised; bet and
-  raise examples also supervise the two amount-bucket tokens.
-- `*.idx`: little-endian `uint64` token offsets, one per example.
-- `meta.pkl`: fixed vocabulary and format metadata.
+- `train.bin` / `val.bin`: little-endian `uint16` token IDs containing concatenated
+  complete trajectories.
+- `*_loss_mask.bin`: aligned `uint8` masks with multiple hero targets per trajectory.
+- `*.idx`: little-endian `uint64` starting token offset for every trajectory.
+- `meta.pkl`: vocabulary, pad ID, block size, and format metadata.
 - `stats.json`, `parse_errors.jsonl`, `audit_samples.jsonl`, and
   `preprocessing_manifest.json`: QA and reproducibility records.
 
-Use `validate_artifacts.py` after preprocessing to verify framing, lengths, token
-ranges, loss-mask placement, and split-group isolation.
+Use `validate_artifacts.py` after preprocessing to verify framing, token ranges,
+loss-mask placement, full-trajectory lengths, and split-group isolation.

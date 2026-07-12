@@ -3,13 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from decimal import Decimal
 
-from .phh import BoardReveal, Decision, ForcedPost, HandEvent, HistoryAction
+from .phh import BoardReveal, Decision, ForcedPost, HeroTrajectory, HistoryAction
 
 
 RANKS = "23456789TJQKA"
 SUITS = "cdhs"
 ACTIONS = ("FOLD", "CHECK", "CALL", "BET", "RAISE")
-RATIO_LABELS = (
+RANGE_LABELS = (
     "ZERO",
     "0_TO_0.25",
     "0.25_TO_0.5",
@@ -24,20 +24,24 @@ RATIO_LABELS = (
     "20_TO_50",
     "GT_50",
 )
-RATIO_THRESHOLDS = tuple(
+RANGE_THRESHOLDS = tuple(
     Decimal(value)
     for value in ("0.25", "0.5", "0.75", "1", "1.5", "2", "3", "5", "10", "20", "50")
 )
 
 
-def ratio_label(value: object) -> str:
+def range_label(value: object) -> str:
     numeric = value if isinstance(value, Decimal) else Decimal(str(value))
     if numeric <= 0:
         return "ZERO"
-    for threshold, label in zip(RATIO_THRESHOLDS, RATIO_LABELS[1:-1]):
+    for threshold, label in zip(RANGE_THRESHOLDS, RANGE_LABELS[1:-1]):
         if numeric <= threshold:
             return label
     return "GT_50"
+
+
+# Backward-compatible import name for callers that only need bucket assignment.
+ratio_label = range_label
 
 
 def build_vocabulary() -> list[str]:
@@ -45,33 +49,34 @@ def build_vocabulary() -> list[str]:
         "<PAD>",
         "<BOS>",
         "<EOS>",
-        "<TARGET>",
-        "<EVENT_SEQUENCE>",
-        "<NO_EVENTS>",
+        "<PLAYER_1_DECISION>",
+        "<PLAYER_STATES>",
+        "TABLE_SIZE",
         "PLAYER_1_HOLE_CARDS",
-    ]
-    tokens += [f"PLAYERS_{count}" for count in range(2, 11)]
-    tokens += [f"ACTIVE_{count}" for count in range(1, 11)]
-    tokens += [f"PLAYER_{number}" for number in range(1, 11)]
-    tokens += ["CARD_UNKNOWN"] + [f"CARD_{rank}{suit}" for rank in RANKS for suit in SUITS]
-    tokens += [f"BOARD_COUNT_{count}" for count in range(6)]
-    tokens += [f"BOARD_REVEAL_{count}" for count in range(1, 6)]
-    tokens += ["POST_ANTE", "POST_BLIND", "POST_STRADDLE", "BLIND_BB_0.5", "BLIND_BB_1"]
-    tokens += [f"ACTION_{action}" for action in ACTIONS]
-    for prefix in (
+        "BOARD_REVEAL",
         "POT_SIZE_BB",
-        "PLAYER_1_TO_CALL_BB",
-        "PLAYER_1_STACK_BB",
-        "EFFECTIVE_STACK_BB",
+        "TO_CALL_BB",
+        "STACK_BB",
         "AMOUNT_BB",
         "AMOUNT_POT",
-    ):
-        tokens += [f"{prefix}_{label}" for label in RATIO_LABELS]
+        "POST_ANTE",
+        "POST_BLIND",
+        "POST_STRADDLE",
+        "VALUE_BB_0.5",
+        "VALUE_BB_1",
+        "STATUS_ACTIVE",
+        "STATUS_ALL_IN",
+    ]
+    tokens += [f"COUNT_{count}" for count in range(11)]
+    tokens += [f"PLAYER_{number}" for number in range(1, 11)]
+    tokens += [f"CARD_{rank}{suit}" for rank in RANKS for suit in SUITS]
+    tokens += [f"ACTION_{action}" for action in ACTIONS]
+    tokens += [f"RANGE_{label}" for label in RANGE_LABELS]
     return tokens
 
 
 @dataclass(frozen=True)
-class EncodedDecision:
+class EncodedTrajectory:
     ids: tuple[int, ...]
     loss_mask: tuple[int, ...]
     tokens: tuple[str, ...]
@@ -96,79 +101,97 @@ class PokerTokenizer:
         return f"PLAYER_{relative_number}"
 
     @staticmethod
-    def _limit_events(events: tuple[HandEvent, ...], event_limit: int) -> list[HandEvent]:
-        if len(events) <= event_limit:
-            return list(events)
-        structural = {
-            index
-            for index, event in enumerate(events)
-            if isinstance(event, (ForcedPost, BoardReveal))
-        }
-        remaining = max(0, event_limit - len(structural))
-        action_indexes = [index for index in range(len(events)) if index not in structural]
-        selected = structural | set(action_indexes[-remaining:] if remaining else [])
-        return [event for index, event in enumerate(events) if index in selected]
+    def _range(value: object) -> str:
+        return f"RANGE_{range_label(value)}"
 
-    def encode_decision(self, decision: Decision, event_limit: int = 64) -> EncodedDecision:
-        bb = decision.big_blind
-        tokens = [
-            "<BOS>",
-            f"PLAYERS_{decision.player_count}",
-            f"ACTIVE_{decision.active_players}",
-            "PLAYER_1_HOLE_CARDS",
-        ]
-        hero_cards = list(decision.hero_cards[:2])
-        while len(hero_cards) < 2:
-            hero_cards.append("UNKNOWN")
-        tokens += ["CARD_UNKNOWN" if card == "UNKNOWN" else f"CARD_{card}" for card in hero_cards]
-        tokens += [f"BOARD_COUNT_{len(decision.board)}"]
-        tokens += [f"CARD_{card}" for card in decision.board]
+    def _append_public_event(
+        self, tokens: list[str], event: ForcedPost | BoardReveal | HistoryAction, trajectory: HeroTrajectory
+    ) -> None:
+        if isinstance(event, BoardReveal):
+            tokens += ["BOARD_REVEAL", f"COUNT_{event.count}"]
+            tokens += [f"CARD_{card}" for card in event.cards]
+            return
+        player = self._player_token(event.player, trajectory.hero, trajectory.player_count)
+        if isinstance(event, ForcedPost):
+            tokens += [player, event.kind]
+            if event.amount_bb == Decimal("0.5"):
+                tokens.append("VALUE_BB_0.5")
+            elif event.amount_bb == Decimal(1):
+                tokens.append("VALUE_BB_1")
+            else:
+                tokens += ["AMOUNT_BB", self._range(event.amount_bb)]
+            return
+        if isinstance(event, HistoryAction):
+            tokens += [player, f"ACTION_{event.action}"]
+            if event.amount > 0:
+                tokens += [
+                    "AMOUNT_BB",
+                    self._range(event.amount_bb),
+                    "AMOUNT_POT",
+                    self._range(event.amount_pot),
+                ]
+            return
+        raise TypeError(f"Unsupported public event type: {type(event).__name__}")
+
+    def _append_hero_decision(
+        self, tokens: list[str], mask: list[int], decision: Decision, trajectory: HeroTrajectory
+    ) -> None:
         tokens += [
-            f"POT_SIZE_BB_{ratio_label(decision.pot / bb)}",
-            f"PLAYER_1_TO_CALL_BB_{ratio_label(decision.to_call / bb)}",
-            f"PLAYER_1_STACK_BB_{ratio_label(decision.hero_stack / bb)}",
-            f"EFFECTIVE_STACK_BB_{ratio_label(decision.effective_stack / bb)}",
-            "<EVENT_SEQUENCE>",
+            "<PLAYER_1_DECISION>",
+            "POT_SIZE_BB",
+            self._range(decision.pot / decision.big_blind),
+            "TO_CALL_BB",
+            self._range(decision.to_call / decision.big_blind),
+            "<PLAYER_STATES>",
         ]
-        events = self._limit_events(decision.events, event_limit)
-        if not events:
-            tokens.append("<NO_EVENTS>")
-        for event in events:
-            if isinstance(event, BoardReveal):
-                tokens.append(f"BOARD_REVEAL_{event.count}")
+        mask.extend([0] * 6)
+        for original_player in range(decision.player_count):
+            player = self._player_token(original_player, trajectory.hero, trajectory.player_count)
+            status = decision.player_statuses[original_player]
+            if status == "FOLDED":
                 continue
-            player = self._player_token(event.player, decision.actor, decision.player_count)
-            if isinstance(event, ForcedPost):
-                tokens += [player, event.kind]
-                if event.kind == "POST_BLIND" and event.amount_bb == Decimal("0.5"):
-                    tokens.append("BLIND_BB_0.5")
-                elif event.kind == "POST_BLIND" and event.amount_bb == Decimal(1):
-                    tokens.append("BLIND_BB_1")
-                else:
-                    tokens.append(f"AMOUNT_BB_{ratio_label(event.amount_bb)}")
-                continue
-            if isinstance(event, HistoryAction):
-                tokens += [player, f"ACTION_{event.action}"]
-                if event.amount > 0:
-                    tokens += [
-                        f"AMOUNT_BB_{ratio_label(event.amount_bb)}",
-                        f"AMOUNT_POT_{ratio_label(event.amount_pot)}",
-                    ]
-                continue
-            raise TypeError(f"Unsupported event type: {type(event).__name__}")
-        tokens += ["<TARGET>", f"ACTION_{decision.target_action}"]
-        target_indices = [len(tokens) - 1]
+            state_tokens = [
+                player,
+                f"STATUS_{status}",
+                "STACK_BB",
+                self._range(decision.player_stacks[original_player] / decision.big_blind),
+            ]
+            tokens += state_tokens
+            mask.extend([0] * len(state_tokens))
+        tokens.append(f"ACTION_{decision.target_action}")
+        mask.append(1)
         if decision.target_action in {"BET", "RAISE"}:
             tokens += [
-                f"AMOUNT_BB_{ratio_label(decision.target_amount_bb)}",
-                f"AMOUNT_POT_{ratio_label(decision.target_amount_pot)}",
+                "AMOUNT_BB",
+                self._range(decision.target_amount_bb),
+                "AMOUNT_POT",
+                self._range(decision.target_amount_pot),
             ]
-            target_indices.extend((len(tokens) - 2, len(tokens) - 1))
-        tokens.append("<EOS>")
+            mask.extend((0, 1, 0, 1))
+
+    def encode_trajectory(self, trajectory: HeroTrajectory) -> EncodedTrajectory:
+        if len(trajectory.hero_cards) != 2 or any(card == "??" for card in trajectory.hero_cards):
+            raise ValueError("A trajectory requires two known hero cards")
+        tokens = [
+            "<BOS>",
+            "TABLE_SIZE",
+            f"COUNT_{trajectory.player_count}",
+            "PLAYER_1_HOLE_CARDS",
+            *(f"CARD_{card}" for card in trajectory.hero_cards),
+        ]
         mask = [0] * len(tokens)
-        for index in target_indices:
-            mask[index] = 1
-        return EncodedDecision(
+        for item in trajectory.items:
+            if isinstance(item, Decision):
+                self._append_hero_decision(tokens, mask, item, trajectory)
+            else:
+                before = len(tokens)
+                self._append_public_event(tokens, item, trajectory)
+                mask.extend([0] * (len(tokens) - before))
+        tokens.append("<EOS>")
+        mask.append(0)
+        if len(tokens) != len(mask):
+            raise RuntimeError("Token and loss-mask lengths diverged")
+        return EncodedTrajectory(
             tuple(self._id(token) for token in tokens), tuple(mask), tuple(tokens)
         )
 

@@ -25,9 +25,11 @@ class ModelTests(unittest.TestCase):
         expected = torch.nn.functional.cross_entropy(logits[:, 2, :], targets[:, 2])
         self.assertTrue(torch.allclose(loss, expected))
 
-    def test_legal_generation_mask(self) -> None:
-        generated = self.model.generate(torch.tensor([[1, 2]]), 3, allowed_token_ids=torch.tensor([7]))
-        self.assertEqual(generated.tolist()[0][-3:], [7, 7, 7])
+    def test_generation_preserves_prefix_and_requested_length(self) -> None:
+        prefix = torch.tensor([[1, 2]])
+        generated = self.model.generate(prefix, 3, top_k=5)
+        self.assertEqual(tuple(generated.shape), (1, 5))
+        self.assertEqual(generated.tolist()[0][:2], [1, 2])
 
 
 if __name__ == "__main__":
