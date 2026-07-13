@@ -55,15 +55,29 @@ There is no `<HISTORY>` or `<EVENT_SEQUENCE>` wrapper: the trajectory itself is
 the history. Board cards enter causally as events such as
 `BOARD_REVEAL COUNT_3 CARD_Qs CARD_7h CARD_2c`. Poker street names are not tokens.
 
-Before each hero decision, the sequence contains the observable pot, call amount,
-and active/all-in player stack states. Players already known to have folded are
-not repeated in later state observations because their fold events remain in the
-trajectory.
+Before each hero decision, the sequence repeats the hero's hole cards and the
+complete currently visible board, followed by the observable pot, call amount,
+and active/all-in player stack states. A preflop observation uses
+`CURRENT_BOARD COUNT_0`; later observations include all three, four, or five
+visible cards. Moving hero cards from the one-time header into each decision
+observation avoids retaining a redundant header copy. Players already known to
+have folded are not repeated because their fold events remain in the trajectory.
+
+For example:
+
+```text
+<PLAYER_1_DECISION>
+PLAYER_1_HOLE_CARDS CARD_As CARD_4s
+CURRENT_BOARD COUNT_3 CARD_Qs CARD_5h CARD_7s
+POT_SIZE_BB RANGE_10_TO_20
+TO_CALL_BB RANGE_5_TO_10
+<PLAYER_STATES>
+```
 
 Numerical values use compositional tokens. For example,
 `POT_SIZE_BB RANGE_5_TO_10` reuses the same `RANGE_5_TO_10` token used by stack
 and action-amount fields. This avoids a separate field-by-range vocabulary entry.
-The fixed vocabulary has 111 tokens.
+The fixed vocabulary has 112 tokens.
 
 Legal actions are deliberately not encoded or stored. Replay checks source action
 legality for data integrity, while later evaluation should measure and penalize
@@ -74,12 +88,13 @@ raw illegal model predictions with a poker engine.
 Across all 10,000 Pluribus hands, preprocessing creates 58,942 complete hero
 trajectories containing 91,356 supervised decisions. Length statistics are:
 
-- median: 44 tokens;
-- 95th percentile: 128 tokens;
-- 99th percentile: 155 tokens;
-- maximum: 218 tokens.
+- median: 46 tokens;
+- 95th percentile: 161 tokens;
+- 99th percentile: 194 tokens;
+- maximum: 271 tokens.
 
-Every trajectory fits a 256-token context without truncation. Preprocessing fails
+Every trajectory fits a 320-token context without truncation. Five trajectories
+would exceed the former 256-token limit. Preprocessing fails
 if a future trajectory exceeds `block_size`; it never discards early hand history.
 
 `PokerTrajectoryDataset` uses `.idx` boundaries to load complete trajectories.

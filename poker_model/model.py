@@ -99,7 +99,7 @@ class Block(nn.Module):
 class GPTConfig:
     """Small-from-scratch defaults suitable for the structured poker vocabulary."""
 
-    block_size: int = 256
+    block_size: int = 320
     vocab_size: int = 256
     n_layer: int = 6
     n_head: int = 6

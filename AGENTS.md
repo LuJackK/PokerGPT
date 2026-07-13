@@ -25,10 +25,13 @@ All perspectives derived from one source hand must remain in the same data split
 Do not use `<HISTORY>`, `<EVENT_SEQUENCE>`, poker street-name tokens, player names,
 tournament-event names, hand IDs, table names, or timestamps. The trajectory itself is the event
 history. Encode board cards when revealed, for example
-`BOARD_REVEAL COUNT_3 CARD_Qs CARD_7h CARD_2c`. Before each hero decision, encode
-the public pot, call amount, and active/all-in player stacks. Folded players need
-not be repeated in later state observations because their fold actions remain in
-the trajectory.
+`BOARD_REVEAL COUNT_3 CARD_Qs CARD_7h CARD_2c`. Immediately before every hero
+decision, repeat the hero's two hole cards and the complete currently visible
+board, then encode the public pot, call amount, and active/all-in player stacks.
+Use `CURRENT_BOARD COUNT_0` before the flop and include all three, four, or five
+visible board cards later. Hero cards belong in these decision observations rather
+than a one-time trajectory header. Folded players need not be repeated in later
+state observations because their fold actions remain in the trajectory.
 
 Use compositional numerical tokens instead of field-by-range vocabulary entries:
 for example `POT_SIZE_BB RANGE_5_TO_10`, `STACK_BB RANGE_GT_50`, and
@@ -38,8 +41,8 @@ raise-to amount that becomes bet or raise plus an incremental contribution, and
 `sm` as a non-decision showdown operation.
 
 The measured Pluribus output has 58,942 complete trajectories, 91,356 supervised
-decisions, a 111-token vocabulary, median length 44, 99th-percentile length 155,
-and maximum length 218. A `block_size` of 256 covers every trajectory. Never
+decisions, a 112-token vocabulary, median length 46, 99th-percentile length 194,
+and maximum length 271. A `block_size` of 320 covers every trajectory. Never
 truncate early hand history to fit context; preprocessing and loading must reject
 an oversized trajectory and require a larger block size. Training batches must
 use `.idx` boundaries, load complete trajectories, right-pad them, and never

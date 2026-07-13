@@ -4,7 +4,10 @@ Streaming preprocessing for PokerKit PHH/PHHS hand histories. The source ZIP is
 never extracted: archive members are inspected and parsed one at a time.
 The selector defaults to the clean six-player Pluribus `NT` corpus.
 Preprocessing writes complete player-perspective hand trajectories with multiple
-supervised hero decisions rather than independent decision snapshots.
+supervised hero decisions rather than independent decision snapshots. Every hero
+decision locally repeats the hero's hole cards, complete visible board, pot, call
+amount, and active/all-in stack state. The measured Pluribus maximum is 271 tokens,
+so preprocessing defaults to a 320-token context without truncation.
 
 ## Pipeline
 

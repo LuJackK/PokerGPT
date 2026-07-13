@@ -18,7 +18,7 @@ from .tokenizer import EncodedTrajectory, PokerTokenizer
 
 @dataclass(frozen=True)
 class PrepareOptions:
-    block_size: int = 256
+    block_size: int = 320
     max_member_bytes: int = 64 * 1024 * 1024
     max_members: int | None = None
     audit_samples: int = 20
@@ -171,7 +171,7 @@ def prepare_dataset(
     )
     meta = {
         "version": __version__,
-        "format": "complete_player_perspective_trajectories_v1",
+        "format": "complete_player_perspective_trajectories_v2",
         "vocab_size": len(tokenizer.itos),
         "stoi": tokenizer.stoi,
         "itos": tokenizer.itos,
@@ -192,7 +192,10 @@ def prepare_dataset(
         "legality": "not encoded or stored; replay validates source actions only",
         "perspective": "hero is PLAYER_1; other seats numbered clockwise",
         "events": "forced posts, public actions, and board reveals are chronological",
-        "observations": "public pot, call amount, status, and stack state precede each hero decision",
+        "observations": (
+            "hero cards, complete current board, public pot, call amount, status, "
+            "and stack state precede each hero decision"
+        ),
         "loss": "multiple hero action targets per trajectory; sizing ranges for BET/RAISE",
         "batching": "sample complete indexed trajectories; never random-crop across boundaries",
     }

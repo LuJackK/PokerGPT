@@ -53,6 +53,7 @@ def build_vocabulary() -> list[str]:
         "<PLAYER_STATES>",
         "TABLE_SIZE",
         "PLAYER_1_HOLE_CARDS",
+        "CURRENT_BOARD",
         "BOARD_REVEAL",
         "POT_SIZE_BB",
         "TO_CALL_BB",
@@ -138,13 +139,18 @@ class PokerTokenizer:
     ) -> None:
         tokens += [
             "<PLAYER_1_DECISION>",
+            "PLAYER_1_HOLE_CARDS",
+            *(f"CARD_{card}" for card in decision.hero_cards),
+            "CURRENT_BOARD",
+            f"COUNT_{len(decision.board)}",
+            *(f"CARD_{card}" for card in decision.board),
             "POT_SIZE_BB",
             self._range(decision.pot / decision.big_blind),
             "TO_CALL_BB",
             self._range(decision.to_call / decision.big_blind),
             "<PLAYER_STATES>",
         ]
-        mask.extend([0] * 6)
+        mask.extend([0] * (11 + len(decision.board)))
         for original_player in range(decision.player_count):
             player = self._player_token(original_player, trajectory.hero, trajectory.player_count)
             status = decision.player_statuses[original_player]
@@ -176,8 +182,6 @@ class PokerTokenizer:
             "<BOS>",
             "TABLE_SIZE",
             f"COUNT_{trajectory.player_count}",
-            "PLAYER_1_HOLE_CARDS",
-            *(f"CARD_{card}" for card in trajectory.hero_cards),
         ]
         mask = [0] * len(tokens)
         for item in trajectory.items:

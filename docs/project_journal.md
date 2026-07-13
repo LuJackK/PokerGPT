@@ -252,6 +252,40 @@ the chronological trajectory already contain that information.
 player, but it should wait until full-raise, all-in under-raise, and action-reopen
 semantics are represented accurately. It is not currently encoded.
 
+## 2026-07-13 - Decision-local cards and board implemented
+
+**Finalized decision.** Every `<PLAYER_1_DECISION>` observation now begins with
+the hero's two hole cards and the complete currently visible board:
+
+```text
+<PLAYER_1_DECISION>
+PLAYER_1_HOLE_CARDS CARD_As CARD_4s
+CURRENT_BOARD COUNT_3 CARD_Qs CARD_5h CARD_7s
+POT_SIZE_BB RANGE_10_TO_20
+TO_CALL_BB RANGE_5_TO_10
+```
+
+`CURRENT_BOARD COUNT_0` represents the preflop state without adding street-name
+tokens. Chronological `BOARD_REVEAL` events remain in place because they preserve
+when public information became available. Hero cards moved out of the one-time
+trajectory header, avoiding a redundant copy while ensuring they are adjacent to
+every supervised choice. Blind-seat orientation was not repeated; the forced-post
+events and relative player order remain available in the trajectory.
+
+**Schema impact.** Adding `CURRENT_BOARD` raises the fixed vocabulary from 111 to
+112 tokens and advances the artifact format to
+`complete_player_perspective_trajectories_v2`. The default context increases from
+256 to 320 rather than truncating any early history.
+
+**Full Pluribus validation.** A fresh streaming run over all 10,000 selected hands
+produced the same 58,942 trajectories and 91,356 supervised decisions, with zero
+parse errors and zero train/validation split-group overlap. Updated trajectory
+lengths are median 46, 95th percentile 161, 99th percentile 194, and maximum 271.
+Five trajectories would exceed the former 256-token context; none exceeds 320.
+The artifact validator additionally checks that every decision observation has
+two local hero cards and a correctly framed zero-, three-, four-, or five-card
+current board.
+
 ## Current open questions
 
 - Finalize training hyperparameters and compute budget for the first baseline.
@@ -265,5 +299,3 @@ semantics are represented accurately. It is not currently encoded.
 - Revisit amount-bucket boundaries using empirical sizing distributions.
 - Measure whether explicit per-player stacks improve validation accuracy relative
   to a smaller summary-state representation.
-- Decide whether to implement decision-local hero cards, current board, and blind
-  seats with a 320-token context based on the measured locality tradeoff.

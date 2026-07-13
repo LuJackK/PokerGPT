@@ -62,6 +62,46 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
                         f"{split}: invalid supervised token {token} at token {index}"
                     )
             decision_count = sum(tokens[index] == decision_id for index in range(start, end))
+            for index in range(start, end):
+                if tokens[index] != decision_id:
+                    continue
+                local = [itos[tokens[position]] for position in range(index, min(end, index + 12))]
+                if len(local) < 7:
+                    report["errors"].append(
+                        f"{split}: truncated decision observation at token {index}"
+                    )
+                    continue
+                if local[1] != "PLAYER_1_HOLE_CARDS" or not all(
+                    token.startswith("CARD_") for token in local[2:4]
+                ):
+                    report["errors"].append(
+                        f"{split}: decision at token {index} lacks local hero cards"
+                    )
+                if local[4] != "CURRENT_BOARD" or not local[5].startswith("COUNT_"):
+                    report["errors"].append(
+                        f"{split}: decision at token {index} lacks local current board"
+                    )
+                    continue
+                try:
+                    board_count = int(local[5].removeprefix("COUNT_"))
+                except ValueError:
+                    report["errors"].append(
+                        f"{split}: invalid current-board count at token {index + 5}"
+                    )
+                    continue
+                board_end = index + 6 + board_count
+                if board_count not in {0, 3, 4, 5} or board_end >= end:
+                    report["errors"].append(
+                        f"{split}: invalid current-board framing at token {index}"
+                    )
+                    continue
+                if not all(
+                    itos[tokens[position]].startswith("CARD_")
+                    for position in range(index + 6, board_end)
+                ) or itos[tokens[board_end]] != "POT_SIZE_BB":
+                    report["errors"].append(
+                        f"{split}: invalid current-board cards at token {index}"
+                    )
             supervised_actions = sum(
                 masks[index] and itos[tokens[index]].startswith("ACTION_")
                 for index in range(start, end)

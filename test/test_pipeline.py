@@ -11,7 +11,7 @@ from pathlib import Path
 
 from poker_pipeline.io_utils import read_jsonl
 from poker_pipeline.manifest import ManifestOptions, build_manifest
-from poker_pipeline.phh import build_hero_trajectories, parse_document, replay_hand
+from poker_pipeline.phh import Decision, build_hero_trajectories, parse_document, replay_hand
 from poker_pipeline.prepare import PrepareOptions, prepare_dataset
 from poker_pipeline.selection import SelectionOptions, select_dataset
 from poker_pipeline.tokenizer import PokerTokenizer, ratio_label
@@ -129,6 +129,10 @@ class PipelineTests(unittest.TestCase):
         multi_decision = next(trajectory for trajectory in trajectories if trajectory.hero == 0)
         full = tokenizer.encode_trajectory(multi_decision)
         self.assertEqual(full.tokens.count("<PLAYER_1_DECISION>"), multi_decision.decision_count)
+        self.assertEqual(
+            full.tokens.count("PLAYER_1_HOLE_CARDS"), multi_decision.decision_count
+        )
+        self.assertEqual(full.tokens.count("CURRENT_BOARD"), multi_decision.decision_count)
         self.assertIn("BOARD_REVEAL", full.tokens)
         self.assertIn("COUNT_3", full.tokens)
         self.assertIn("CARD_9s", full.tokens)
@@ -140,6 +144,24 @@ class PipelineTests(unittest.TestCase):
             if bit and full.tokens[index].startswith("ACTION_")
         ]
         self.assertEqual(len(supervised_actions), multi_decision.decision_count)
+
+        decision_offsets = [
+            index
+            for index, token in enumerate(full.tokens)
+            if token == "<PLAYER_1_DECISION>"
+        ]
+        expected_boards = [
+            decision.board for decision in multi_decision.items if isinstance(decision, Decision)
+        ]
+        for offset, expected_board in zip(decision_offsets, expected_boards):
+            self.assertEqual(full.tokens[offset + 1], "PLAYER_1_HOLE_CARDS")
+            self.assertEqual(full.tokens[offset + 2 : offset + 4], ("CARD_6s", "CARD_6h"))
+            self.assertEqual(full.tokens[offset + 4], "CURRENT_BOARD")
+            self.assertEqual(full.tokens[offset + 5], f"COUNT_{len(expected_board)}")
+            self.assertEqual(
+                full.tokens[offset + 6 : offset + 6 + len(expected_board)],
+                tuple(f"CARD_{card}" for card in expected_board),
+            )
 
     def test_end_to_end_binary_alignment_and_metadata(self) -> None:
         selection = self.root / "selected.jsonl"
@@ -163,7 +185,7 @@ class PipelineTests(unittest.TestCase):
             self.archive,
             selection,
             output,
-            PrepareOptions(block_size=256, audit_samples=2),
+            PrepareOptions(block_size=320, audit_samples=2),
         )
         self.assertGreater(stats["writer_trajectories"]["train"], 0)
         self.assertGreater(stats["writer_trajectories"]["val"], 0)
@@ -178,7 +200,8 @@ class PipelineTests(unittest.TestCase):
         with (output / "meta.pkl").open("rb") as handle:
             meta = pickle.load(handle)
         self.assertEqual(meta["token_dtype"], "uint16_le")
-        self.assertEqual(meta["format"], "complete_player_perspective_trajectories_v1")
+        self.assertEqual(meta["format"], "complete_player_perspective_trajectories_v2")
+        self.assertEqual(meta["block_size"], 320)
         self.assertEqual(meta["privacy"], "one complete trajectory per hero; opponent private cards omitted")
         self.assertEqual(json.loads((output / "stats.json").read_text())["parse_error_count"], 0)
         validation = validate_artifacts(output, selection)
