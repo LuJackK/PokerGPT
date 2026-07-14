@@ -7,13 +7,20 @@ import pickle
 import struct
 from collections import Counter
 from dataclasses import asdict, dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from . import __version__
 from .io_utils import read_jsonl
 from .phh import Decision, build_hero_trajectories, iter_archive_hand_decisions
-from .tokenizer import EncodedTrajectory, PokerTokenizer
+from .tokenizer import (
+    DECISION_TOKENS,
+    RANGE_TOKENS,
+    EncodedTrajectory,
+    PokerTokenizer,
+    default_range_representatives,
+)
 
 
 @dataclass(frozen=True)
@@ -76,6 +83,14 @@ def _percentile(values: list[int], fraction: float) -> int:
     return ordered[round((len(ordered) - 1) * fraction)]
 
 
+def _median_decimal(values: list[Decimal]) -> Decimal:
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
 def prepare_dataset(
     zip_path: Path,
     selection_path: Path,
@@ -98,6 +113,9 @@ def prepare_dataset(
     decisions_per_trajectory: list[int] = []
     errors: list[dict[str, str]] = []
     audit: list[dict[str, Any]] = []
+    training_range_ratios: dict[str, list[Decimal]] = {
+        token: [] for token in RANGE_TOKENS
+    }
     committed = False
     try:
         for selected, decisions, error in iter_archive_hand_decisions(
@@ -139,6 +157,10 @@ def prepare_dataset(
                     if not isinstance(item, Decision):
                         continue
                     counts[f"action:{item.target_action}"] += 1
+                    decision_token = tokenizer.hero_decision_token(item)
+                    counts[f"decision_token:{decision_token}"] += 1
+                    if split == "train" and decision_token in training_range_ratios:
+                        training_range_ratios[decision_token].append(item.target_amount_pot)
                     counts[f"street:{item.street}"] += 1
                     counts["supervised_decisions"] += 1
                 if len(audit) < options.audit_samples:
@@ -169,9 +191,23 @@ def prepare_dataset(
     (output_dir / "audit_samples.jsonl").write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in audit), encoding="utf-8"
     )
+    fallback_representatives = default_range_representatives()
+    range_representatives: dict[str, str] = {}
+    range_representative_sources: dict[str, str] = {}
+    for token in RANGE_TOKENS:
+        observed = training_range_ratios[token]
+        if observed:
+            representative = _median_decimal(observed)
+            source = "training_split_median"
+        else:
+            representative = fallback_representatives[token]
+            source = "deterministic_in_bucket_fallback"
+        range_representatives[token] = str(representative)
+        range_representative_sources[token] = source
+
     meta = {
         "version": __version__,
-        "format": "complete_player_perspective_trajectories_v2",
+        "format": "complete_player_perspective_single_decision_token_v3",
         "vocab_size": len(tokenizer.itos),
         "stoi": tokenizer.stoi,
         "itos": tokenizer.itos,
@@ -180,6 +216,11 @@ def prepare_dataset(
         "index_dtype": "uint64_le_token_offset",
         "block_size": options.block_size,
         "pad_token_id": tokenizer.stoi["<PAD>"],
+        "decision_tokens": list(DECISION_TOKENS),
+        "decision_token_ids": [tokenizer.stoi[token] for token in DECISION_TOKENS],
+        "range_tokens": list(RANGE_TOKENS),
+        "range_representative_ratio": range_representatives,
+        "range_representative_source": range_representative_sources,
         "normalization": {
             "chip_arithmetic": "decimal_exact",
             "amount_features": [
@@ -196,7 +237,7 @@ def prepare_dataset(
             "hero cards, complete current board, public pot, call amount, status, "
             "and stack state precede each hero decision"
         ),
-        "loss": "multiple hero action targets per trajectory; sizing ranges for BET/RAISE",
+        "loss": "exactly one compressed decision-token target per hero decision",
         "batching": "sample complete indexed trajectories; never random-crop across boundaries",
     }
     with (output_dir / "meta.pkl").open("wb") as handle:
@@ -218,6 +259,9 @@ def prepare_dataset(
             "median": _percentile(decisions_per_trajectory, 0.5),
             "max": max(decisions_per_trajectory, default=0),
             "mean": sum(decisions_per_trajectory) / max(len(decisions_per_trajectory), 1),
+        },
+        "training_range_representative_samples": {
+            token: len(values) for token, values in training_range_ratios.items()
         },
         "parse_error_count": len(errors),
         "writer_trajectories": {

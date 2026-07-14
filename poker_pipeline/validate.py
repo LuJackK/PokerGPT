@@ -4,10 +4,12 @@ import json
 import pickle
 import struct
 from array import array
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
 from .io_utils import read_jsonl
+from .tokenizer import DECISION_TOKENS, RANGE_THRESHOLDS, RANGE_TOKENS
 
 
 def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> dict[str, Any]:
@@ -20,7 +22,41 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
     eos_id = meta["stoi"]["<EOS>"]
     decision_id = meta["stoi"]["<PLAYER_1_DECISION>"]
     block_size = int(meta["block_size"])
+    expected_decision_tokens = set(DECISION_TOKENS)
+    metadata_decision_tokens = set(meta.get("decision_tokens", ()))
     report: dict[str, Any] = {"splits": {}, "errors": []}
+    if metadata_decision_tokens != expected_decision_tokens:
+        report["errors"].append("meta.pkl decision-token set does not match the pipeline")
+    if "RANGE_ZERO" in metadata_decision_tokens:
+        report["errors"].append("meta.pkl permits RANGE_ZERO as a hero decision")
+    if tuple(meta.get("range_tokens", ())) != RANGE_TOKENS:
+        report["errors"].append("meta.pkl range-token set does not match the pipeline")
+    representatives = meta.get("range_representative_ratio", {})
+    if set(representatives) != set(RANGE_TOKENS):
+        report["errors"].append(
+            "meta.pkl does not define exactly one representative for every range"
+        )
+    else:
+        lower = Decimal(0)
+        for index, token in enumerate(RANGE_TOKENS):
+            try:
+                representative = Decimal(str(representatives[token]))
+            except (InvalidOperation, ValueError):
+                report["errors"].append(
+                    f"meta.pkl has an invalid representative for {token}"
+                )
+                continue
+            upper = RANGE_THRESHOLDS[index] if index < len(RANGE_THRESHOLDS) else None
+            if (
+                not representative.is_finite()
+                or representative <= lower
+                or upper is not None and representative > upper
+            ):
+                report["errors"].append(
+                    f"meta.pkl representative {representative} is outside {token}"
+                )
+            if upper is not None:
+                lower = upper
 
     for split in ("train", "val"):
         token_path = output_dir / f"{split}.bin"
@@ -57,11 +93,14 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
                 report["errors"].append(f"{split}: example {number} has no supervised token")
             for index in example_masked:
                 token = itos[tokens[index]]
-                if not (token.startswith("ACTION_") or token.startswith("RANGE_")):
+                if token not in expected_decision_tokens:
                     report["errors"].append(
                         f"{split}: invalid supervised token {token} at token {index}"
                     )
-            decision_count = sum(tokens[index] == decision_id for index in range(start, end))
+            decision_positions = [
+                index for index in range(start, end) if tokens[index] == decision_id
+            ]
+            decision_count = len(decision_positions)
             for index in range(start, end):
                 if tokens[index] != decision_id:
                     continue
@@ -102,14 +141,32 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
                     report["errors"].append(
                         f"{split}: invalid current-board cards at token {index}"
                     )
-            supervised_actions = sum(
-                masks[index] and itos[tokens[index]].startswith("ACTION_")
-                for index in range(start, end)
-            )
-            if decision_count != supervised_actions:
+            if not decision_positions:
+                report["errors"].append(
+                    f"{split}: trajectory {number} has no decision marker"
+                )
+            elif any(masks[index] for index in range(start, decision_positions[0])):
+                report["errors"].append(
+                    f"{split}: trajectory {number} has supervision before its first decision"
+                )
+            for decision_number, decision_position in enumerate(decision_positions):
+                next_position = (
+                    decision_positions[decision_number + 1]
+                    if decision_number + 1 < decision_count
+                    else end
+                )
+                targets = [
+                    index for index in range(decision_position, next_position) if masks[index]
+                ]
+                if len(targets) != 1:
+                    report["errors"].append(
+                        f"{split}: trajectory {number} decision {decision_number} has "
+                        f"{len(targets)} supervised targets; expected exactly one"
+                    )
+            if decision_count != len(example_masked):
                 report["errors"].append(
                     f"{split}: trajectory {number} has {decision_count} decision markers "
-                    f"but {supervised_actions} supervised actions"
+                    f"but {len(example_masked)} supervised targets"
                 )
             masked += len(example_masked)
         report["splits"][split] = {

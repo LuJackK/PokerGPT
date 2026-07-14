@@ -6,8 +6,9 @@ The selector defaults to the clean six-player Pluribus `NT` corpus.
 Preprocessing writes complete player-perspective hand trajectories with multiple
 supervised hero decisions rather than independent decision snapshots. Every hero
 decision locally repeats the hero's hole cards, complete visible board, pot, call
-amount, and active/all-in stack state. The measured Pluribus maximum is 271 tokens,
-so preprocessing defaults to a 320-token context without truncation.
+amount, and active/all-in stack state, then supervises exactly one compressed
+decision token. The regenerated Pluribus maximum remains 271 tokens, so
+preprocessing defaults to a 320-token context without truncation.
 
 ## Pipeline
 
@@ -35,8 +36,9 @@ Dataset-specific decisions and observed quirks are documented in
 `poker_model/model.py` contains the nanoGPT-style causal Transformer used by
 PokerGPT. It keeps nanoGPT's pre-norm blocks, causal self-attention, GELU MLP,
 weight tying, GPT-2 initialization, and AdamW grouping, while adding masked
-next-token loss for the pipeline's decision-token masks. Generation returns raw
-predictions so a poker engine can measure and penalize illegal moves.
+next-token loss for the pipeline's decision-token masks. Decision decoding
+renormalizes only the fixed hero-decision logits and returns exactly one raw token
+so a poker engine can measure illegal actions and sizes before clamping.
 
 ```python
 from poker_model import GPT, GPTConfig, PokerTrajectoryDataset

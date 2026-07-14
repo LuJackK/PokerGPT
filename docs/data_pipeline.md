@@ -47,9 +47,12 @@ the hero's final decision remain in chronological order, and opponent private
 cards, future events, and showdown-only information are omitted.
 
 A trajectory may contain several `<PLAYER_1_DECISION>` observations and targets.
-Loss is applied only to the hero's action token and, for bets and raises, the two
-sizing-range tokens. Opponent actions, forced posts, state fields, and board
-reveals remain context with zero loss.
+Every hero decision produces exactly one supervised token: folds use
+`ACTION_FOLD`, checks and calls use `ACTION_PASSIVE`, non-all-in bets and raises
+use one pot-relative `RANGE_*`, and aggressive all-ins use `ACTION_ALL_IN`.
+`RANGE_ZERO` is invalid as a hero target. Opponent actions remain explicit
+`ACTION_CHECK`, `ACTION_CALL`, `ACTION_BET`, and `ACTION_RAISE` context tokens;
+forced posts, state fields, and board reveals also have zero loss.
 
 There is no `<HISTORY>` or `<EVENT_SEQUENCE>` wrapper: the trajectory itself is
 the history. Board cards enter causally as events such as
@@ -76,8 +79,18 @@ TO_CALL_BB RANGE_5_TO_10
 
 Numerical values use compositional tokens. For example,
 `POT_SIZE_BB RANGE_5_TO_10` reuses the same `RANGE_5_TO_10` token used by stack
-and action-amount fields. This avoids a separate field-by-range vocabulary entry.
-The fixed vocabulary has 112 tokens.
+fields and aggressive hero targets. This avoids a separate field-by-range
+vocabulary entry.
+Values above 50 big blinds retain strategically meaningful resolution through
+`RANGE_50_TO_75`, `RANGE_75_TO_100`, `RANGE_100_TO_150`, and `RANGE_GT_150`
+instead of collapsing every deep stack into one bucket. Adding the two compressed
+hero action tokens gives a fixed vocabulary of 117 tokens.
+
+For execution, `meta.pkl` stores one representative ratio for every nonzero range.
+The value is the exact median observed ratio in that bucket on the training split.
+An unobserved bucket receives a deterministic in-bucket fallback so every model
+output remains executable. Passive actions become check or call from `to_call`;
+aggressive actions become bet or raise from `current_bet`.
 
 Legal actions are deliberately not encoded or stored. Replay checks source action
 legality for data integrity, while later evaluation should measure and penalize
@@ -85,16 +98,16 @@ raw illegal model predictions with a poker engine.
 
 ## Context length and batching
 
-Across all 10,000 Pluribus hands, preprocessing creates 58,942 complete hero
-trajectories containing 91,356 supervised decisions. Length statistics are:
+The full version 0.7.0 run created 58,942 complete hero trajectories containing
+91,356 supervised decisions. Its length statistics are:
 
 - median: 46 tokens;
-- 95th percentile: 161 tokens;
-- 99th percentile: 194 tokens;
+- 95th percentile: 157 tokens;
+- 99th percentile: 190 tokens;
 - maximum: 271 tokens.
 
-Every trajectory fits a 320-token context without truncation. Five trajectories
-would exceed the former 256-token limit. Preprocessing fails
+Every trajectory fits a 320-token context without truncation. Keep 320 for the
+first baseline because the maximum remains 271 tokens. Preprocessing fails
 if a future trajectory exceeds `block_size`; it never discards early hand history.
 
 `PokerTrajectoryDataset` uses `.idx` boundaries to load complete trajectories.
@@ -114,9 +127,11 @@ All hero perspectives derived from the same hand therefore remain in one split.
   complete trajectories.
 - `*_loss_mask.bin`: aligned `uint8` masks with multiple hero targets per trajectory.
 - `*.idx`: little-endian `uint64` starting token offset for every trajectory.
-- `meta.pkl`: vocabulary, pad ID, block size, and format metadata.
+- `meta.pkl`: vocabulary, decision-token IDs, training-derived range
+  representatives, pad ID, block size, and format metadata.
 - `stats.json`, `parse_errors.jsonl`, `audit_samples.jsonl`, and
   `preprocessing_manifest.json`: QA and reproducibility records.
 
 Use `validate_artifacts.py` after preprocessing to verify framing, token ranges,
-loss-mask placement, full-trajectory lengths, and split-group isolation.
+exactly one valid supervised token per decision, rejection of `RANGE_ZERO` as a
+hero target, full-trajectory lengths, and split-group isolation.

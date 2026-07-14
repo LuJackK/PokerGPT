@@ -8,7 +8,8 @@ from .phh import BoardReveal, Decision, ForcedPost, HeroTrajectory, HistoryActio
 
 RANKS = "23456789TJQKA"
 SUITS = "cdhs"
-ACTIONS = ("FOLD", "CHECK", "CALL", "BET", "RAISE")
+PUBLIC_ACTIONS = ("FOLD", "CHECK", "CALL", "BET", "RAISE")
+HERO_ACTIONS = ("PASSIVE", "ALL_IN")
 RANGE_LABELS = (
     "ZERO",
     "0_TO_0.25",
@@ -22,12 +23,32 @@ RANGE_LABELS = (
     "5_TO_10",
     "10_TO_20",
     "20_TO_50",
-    "GT_50",
+    "50_TO_75",
+    "75_TO_100",
+    "100_TO_150",
+    "GT_150",
 )
 RANGE_THRESHOLDS = tuple(
     Decimal(value)
-    for value in ("0.25", "0.5", "0.75", "1", "1.5", "2", "3", "5", "10", "20", "50")
+    for value in (
+        "0.25",
+        "0.5",
+        "0.75",
+        "1",
+        "1.5",
+        "2",
+        "3",
+        "5",
+        "10",
+        "20",
+        "50",
+        "75",
+        "100",
+        "150",
+    )
 )
+RANGE_TOKENS = tuple(f"RANGE_{label}" for label in RANGE_LABELS if label != "ZERO")
+DECISION_TOKENS = ("ACTION_FOLD", "ACTION_PASSIVE", *RANGE_TOKENS, "ACTION_ALL_IN")
 
 
 def range_label(value: object) -> str:
@@ -37,11 +58,22 @@ def range_label(value: object) -> str:
     for threshold, label in zip(RANGE_THRESHOLDS, RANGE_LABELS[1:-1]):
         if numeric <= threshold:
             return label
-    return "GT_50"
+    return RANGE_LABELS[-1]
 
 
 # Backward-compatible import name for callers that only need bucket assignment.
 ratio_label = range_label
+
+
+def default_range_representatives() -> dict[str, Decimal]:
+    """Return deterministic in-bucket fallbacks for ranges absent from training."""
+    representatives: dict[str, Decimal] = {}
+    lower = Decimal(0)
+    for threshold, token in zip(RANGE_THRESHOLDS, RANGE_TOKENS[:-1]):
+        representatives[token] = (lower + threshold) / 2
+        lower = threshold
+    representatives[RANGE_TOKENS[-1]] = lower * Decimal("1.5")
+    return representatives
 
 
 def build_vocabulary() -> list[str]:
@@ -71,7 +103,7 @@ def build_vocabulary() -> list[str]:
     tokens += [f"COUNT_{count}" for count in range(11)]
     tokens += [f"PLAYER_{number}" for number in range(1, 11)]
     tokens += [f"CARD_{rank}{suit}" for rank in RANKS for suit in SUITS]
-    tokens += [f"ACTION_{action}" for action in ACTIONS]
+    tokens += [f"ACTION_{action}" for action in (*PUBLIC_ACTIONS, *HERO_ACTIONS)]
     tokens += [f"RANGE_{label}" for label in RANGE_LABELS]
     return tokens
 
@@ -104,6 +136,20 @@ class PokerTokenizer:
     @staticmethod
     def _range(value: object) -> str:
         return f"RANGE_{range_label(value)}"
+
+    def hero_decision_token(self, decision: Decision) -> str:
+        if decision.target_action == "FOLD":
+            return "ACTION_FOLD"
+        if decision.target_action in {"CHECK", "CALL"}:
+            return "ACTION_PASSIVE"
+        if decision.target_action not in {"BET", "RAISE"}:
+            raise ValueError(f"Unsupported hero decision: {decision.target_action}")
+        if decision.target_amount > 0 and decision.target_amount == decision.hero_stack:
+            return "ACTION_ALL_IN"
+        token = self._range(decision.target_amount_pot)
+        if token == "RANGE_ZERO":
+            raise ValueError("RANGE_ZERO is not a valid aggressive hero decision")
+        return token
 
     def _append_public_event(
         self, tokens: list[str], event: ForcedPost | BoardReveal | HistoryAction, trajectory: HeroTrajectory
@@ -164,16 +210,8 @@ class PokerTokenizer:
             ]
             tokens += state_tokens
             mask.extend([0] * len(state_tokens))
-        tokens.append(f"ACTION_{decision.target_action}")
+        tokens.append(self.hero_decision_token(decision))
         mask.append(1)
-        if decision.target_action in {"BET", "RAISE"}:
-            tokens += [
-                "AMOUNT_BB",
-                self._range(decision.target_amount_bb),
-                "AMOUNT_POT",
-                self._range(decision.target_amount_pot),
-            ]
-            mask.extend((0, 1, 0, 1))
 
     def encode_trajectory(self, trajectory: HeroTrajectory) -> EncodedTrajectory:
         if len(trajectory.hero_cards) != 2 or any(card == "??" for card in trajectory.hero_cards):

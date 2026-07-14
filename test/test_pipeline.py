@@ -14,7 +14,7 @@ from poker_pipeline.manifest import ManifestOptions, build_manifest
 from poker_pipeline.phh import Decision, build_hero_trajectories, parse_document, replay_hand
 from poker_pipeline.prepare import PrepareOptions, prepare_dataset
 from poker_pipeline.selection import SelectionOptions, select_dataset
-from poker_pipeline.tokenizer import PokerTokenizer, ratio_label
+from poker_pipeline.tokenizer import DECISION_TOKENS, PokerTokenizer, ratio_label
 from poker_pipeline.validate import validate_artifacts
 
 
@@ -31,6 +31,10 @@ players = ['redacted1', 'redacted2', 'redacted3', 'redacted4', 'redacted5', 'red
 """
 
 HAND_2 = HAND_1.replace("hand = 47", "hand = 48").replace("6s6h", "2c2d")
+ALL_IN_HAND = HAND_1.replace(
+    "'p2 cbr 300', 'p1 cc', 'd db 9sAhTs', 'p1 cc', 'p2 cbr 480', 'p1 f'",
+    "'p2 cbr 10000', 'p1 f'",
+)
 
 
 class PipelineTests(unittest.TestCase):
@@ -100,13 +104,29 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(ratio_label(Decimal("0.5")), "0.25_TO_0.5")
         self.assertEqual(ratio_label(Decimal("1.5")), "1_TO_1.5")
         self.assertEqual(ratio_label(Decimal("2.5")), "2_TO_3")
-        self.assertEqual(ratio_label(Decimal("75")), "GT_50")
+        self.assertEqual(ratio_label(Decimal("50")), "20_TO_50")
+        self.assertEqual(ratio_label(Decimal("50.01")), "50_TO_75")
+        self.assertEqual(ratio_label(Decimal("75")), "50_TO_75")
+        self.assertEqual(ratio_label(Decimal("75.01")), "75_TO_100")
+        self.assertEqual(ratio_label(Decimal("100")), "75_TO_100")
+        self.assertEqual(ratio_label(Decimal("100.01")), "100_TO_150")
+        self.assertEqual(ratio_label(Decimal("150")), "100_TO_150")
+        self.assertEqual(ratio_label(Decimal("150.01")), "GT_150")
 
     def test_tokenizer_builds_complete_relative_hero_trajectories(self) -> None:
         hand = parse_document(HAND_1, "phh")[0][1]
         decisions = list(replay_hand("fixture.phh", "1", hand))
         trajectories = build_hero_trajectories(decisions)
         tokenizer = PokerTokenizer()
+        self.assertEqual(len(tokenizer.itos), 117)
+        self.assertNotIn("RANGE_GT_50", tokenizer.stoi)
+        self.assertIn("RANGE_50_TO_75", tokenizer.stoi)
+        self.assertIn("RANGE_75_TO_100", tokenizer.stoi)
+        self.assertIn("RANGE_100_TO_150", tokenizer.stoi)
+        self.assertIn("RANGE_GT_150", tokenizer.stoi)
+        self.assertIn("ACTION_PASSIVE", tokenizer.stoi)
+        self.assertIn("ACTION_ALL_IN", tokenizer.stoi)
+        self.assertNotIn("RANGE_ZERO", DECISION_TOKENS)
         early_fold = next(trajectory for trajectory in trajectories if trajectory.hero == 2)
         encoded = tokenizer.encode_trajectory(early_fold)
         self.assertIn("CARD_8h", encoded.tokens)  # acting player's cards
@@ -138,12 +158,23 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("CARD_9s", full.tokens)
         self.assertIn("POT_SIZE_BB", full.tokens)
         self.assertFalse(any(token.startswith("POT_SIZE_BB_") for token in full.tokens))
-        supervised_actions = [
+        supervised_tokens = [
             full.tokens[index]
             for index, bit in enumerate(full.loss_mask)
-            if bit and full.tokens[index].startswith("ACTION_")
+            if bit
         ]
-        self.assertEqual(len(supervised_actions), multi_decision.decision_count)
+        self.assertEqual(supervised_tokens, ["ACTION_PASSIVE", "ACTION_PASSIVE", "ACTION_PASSIVE", "ACTION_FOLD"])
+        self.assertEqual(len(supervised_tokens), multi_decision.decision_count)
+
+        aggressive = next(trajectory for trajectory in trajectories if trajectory.hero == 1)
+        aggressive_encoded = tokenizer.encode_trajectory(aggressive)
+        aggressive_targets = [
+            aggressive_encoded.tokens[index]
+            for index, bit in enumerate(aggressive_encoded.loss_mask)
+            if bit
+        ]
+        self.assertEqual(aggressive_targets, ["RANGE_0.75_TO_1", "RANGE_0.75_TO_1"])
+        self.assertEqual(len(aggressive_targets), aggressive.decision_count)
 
         decision_offsets = [
             index
@@ -162,6 +193,19 @@ class PipelineTests(unittest.TestCase):
                 full.tokens[offset + 6 : offset + 6 + len(expected_board)],
                 tuple(f"CARD_{card}" for card in expected_board),
             )
+
+    def test_aggressive_all_in_is_one_supervised_token(self) -> None:
+        hand = parse_document(ALL_IN_HAND, "phh")[0][1]
+        decisions = list(replay_hand("all-in.phh", "1", hand))
+        all_in = next(decision for decision in decisions if decision.actor == 1)
+        self.assertEqual(all_in.target_action, "RAISE")
+        self.assertEqual(all_in.target_amount, all_in.hero_stack)
+        trajectory = next(
+            item for item in build_hero_trajectories(decisions) if item.hero == 1
+        )
+        encoded = PokerTokenizer().encode_trajectory(trajectory)
+        targets = [encoded.tokens[index] for index, bit in enumerate(encoded.loss_mask) if bit]
+        self.assertEqual(targets, ["ACTION_ALL_IN"])
 
     def test_end_to_end_binary_alignment_and_metadata(self) -> None:
         selection = self.root / "selected.jsonl"
@@ -200,8 +244,15 @@ class PipelineTests(unittest.TestCase):
         with (output / "meta.pkl").open("rb") as handle:
             meta = pickle.load(handle)
         self.assertEqual(meta["token_dtype"], "uint16_le")
-        self.assertEqual(meta["format"], "complete_player_perspective_trajectories_v2")
+        self.assertEqual(meta["format"], "complete_player_perspective_single_decision_token_v3")
         self.assertEqual(meta["block_size"], 320)
+        self.assertEqual(meta["decision_tokens"], list(DECISION_TOKENS))
+        self.assertNotIn("RANGE_ZERO", meta["decision_tokens"])
+        self.assertEqual(
+            meta["range_representative_source"]["RANGE_0.75_TO_1"],
+            "training_split_median",
+        )
+        self.assertEqual(meta["range_representative_ratio"]["RANGE_0.75_TO_1"], "0.9")
         self.assertEqual(meta["privacy"], "one complete trajectory per hero; opponent private cards omitted")
         self.assertEqual(json.loads((output / "stats.json").read_text())["parse_error_count"], 0)
         validation = validate_artifacts(output, selection)

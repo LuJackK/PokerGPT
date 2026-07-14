@@ -62,6 +62,7 @@ class Decision:
     board: tuple[str, ...]
     pot: Decimal
     to_call: Decimal
+    current_bet: Decimal
     big_blind: Decimal
     hero_stack: Decimal
     effective_stack: Decimal
@@ -242,7 +243,10 @@ def _decision(
     owed = state.to_call(actor)
     pot_before = state.pot
     if target in {"BET", "RAISE"}:
-        delta = max(Decimal(0), amount_to - state.street_contrib[actor])
+        delta = min(
+            max(Decimal(0), amount_to - state.street_contrib[actor]),
+            state.stacks[actor],
+        )
     elif target == "CALL":
         delta = min(owed, state.stacks[actor])
     else:
@@ -264,6 +268,7 @@ def _decision(
         board=tuple(state.board),
         pot=pot_before,
         to_call=owed,
+        current_bet=state.current_bet,
         big_blind=state.big_blind,
         hero_stack=state.stacks[actor],
         effective_stack=effective,

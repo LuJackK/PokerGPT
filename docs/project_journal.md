@@ -286,6 +286,34 @@ The artifact validator additionally checks that every decision observation has
 two local hero cards and a correctly framed zero-, three-, four-, or five-card
 current board.
 
+## 2026-07-14 - Deep-stack range resolution
+
+**Problem found.** The original shared range vocabulary ended at
+`RANGE_GT_50`. A full Pluribus audit found that 309,375 of 309,930 active-stack
+observations (99.82%) collapsed into that one bucket, making 55 BB, 100 BB, and
+200 BB indistinguishable.
+
+**Changed decision.** Replace `RANGE_GT_50` with four compositional ranges:
+
+- `RANGE_50_TO_75`;
+- `RANGE_75_TO_100`;
+- `RANGE_100_TO_150`;
+- `RANGE_GT_150`.
+
+The boundaries remain shared by stacks, pots, calls, and action-sizing fields.
+The fixed vocabulary increases from 112 to 115 tokens, the pipeline version
+advances to 0.6.0, and existing binary artifacts must be regenerated with their
+matching `meta.pkl`. Sequence lengths and the 320-token context limit do not
+change.
+
+**Post-change audit.** Across the same 309,930 active-stack observations, 307,291
+(99.15%) fall in `RANGE_75_TO_100`, 2,084 (0.67%) fall in
+`RANGE_50_TO_75`, and 555 (0.18%) are at or below 50 BB. The Pluribus corpus
+starts every hand at 100 BB, so a large high-stack mode is expected; the change
+improves strategically meaningful resolution rather than attempting to balance
+the observed distribution artificially. The 100-to-150 and above-150 ranges are
+available for future deeper-stack corpora.
+
 ## Current open questions
 
 - Finalize training hyperparameters and compute budget for the first baseline.
@@ -296,6 +324,74 @@ current board.
 - Compare action-only loss against joint action-and-sizing loss.
 - Determine whether HandHQ hands with known hero cards add useful diversity after
   the Pluribus baseline.
-- Revisit amount-bucket boundaries using empirical sizing distributions.
+- Monitor the revised amount buckets with validation accuracy and sizing error.
 - Measure whether explicit per-player stacks improve validation accuracy relative
   to a smaller summary-state representation.
+
+## 2026-07-15 - One supervised token per hero decision
+
+**Accepted decision.** Compress every hero decision into exactly one target:
+
+- fold becomes `ACTION_FOLD`;
+- check or call becomes `ACTION_PASSIVE`;
+- a non-all-in bet or raise becomes one pot-relative nonzero `RANGE_*` token;
+- an aggressive contribution that consumes the remaining stack becomes
+  `ACTION_ALL_IN`.
+
+`RANGE_ZERO` remains available for zero-valued public state fields but is invalid
+as a hero decision. Opponent actions remain explicit action-plus-amount context,
+so the compression changes only supervised hero targets. The poker engine recovers
+check versus call from `to_call` and bet versus raise from `current_bet`.
+
+**Why.** Every decision now has equal loss weight, action and sizing cannot
+contradict one another, and inference ends after one forward pass and one selected
+token. The Transformer and masked next-token cross-entropy do not change.
+
+**Implementation.** Pipeline version 0.7.0 uses format
+`complete_player_perspective_single_decision_token_v3` and a 117-token vocabulary.
+The tokenizer emits one masked token per decision; the validator requires exactly
+one valid decision target in each decision span. `meta.pkl` records the fixed
+decision-token set and an executable representative for every nonzero range. Each
+observed bucket uses its exact training-split median ratio; empty buckets use a
+documented deterministic in-bucket fallback. Inference renormalizes only decision
+logits, supports grouped greedy decoding, direct one-token sampling, and raw engine
+interpretation. Evaluation helpers aggregate three-way action probabilities,
+recover five-way actions, and track sizing, street, confusion, and pre-clamp
+legality metrics.
+
+**Validation status.** Fixture preprocessing, binary alignment, all-in detection,
+metadata, and artifact validation tests pass. Full Pluribus artifacts remain stale
+until regenerated and validated with version 0.7.0; retain `block_size = 320` until
+that run reports the new maximum complete-trajectory length.
+
+## 2026-07-15 - Version 0.7.0 full Pluribus regeneration
+
+The production pipeline regenerated all 10,000 selected Pluribus NT six-max hands
+under `data/processed/` without extracting the archive. Deterministic session-group
+splitting assigned 9,000 source hands to training and 1,000 to validation, with 83
+training groups, nine validation groups, and zero overlap.
+
+**Validated output.** The run produced:
+
+- 58,942 complete hero trajectories: 53,045 train and 5,897 validation;
+- 91,356 supervised decisions and exactly 91,356 supervised tokens;
+- 48,271 folds, 24,613 passive decisions, 18,128 non-all-in range decisions,
+  and 344 aggressive all-ins;
+- zero parse errors and zero trajectories over `block_size = 320`;
+- trajectory length median 46, 95th percentile 157, 99th percentile 190, and
+  maximum 271.
+
+Artifact validation passed framing, vocabulary bounds, one-target-per-decision,
+decision-token validity, complete-trajectory length, binary alignment, and split
+isolation checks with no errors. Because the maximum remains 271, keep
+`block_size = 320` for the first baseline.
+
+## 2026-07-15 - First-baseline readiness checkpoint
+
+Version 0.7.0 is now the baseline data contract: its 117-token vocabulary,
+matching `meta.pkl`, and regenerated Pluribus binaries validated with no errors.
+Decision-only decoding and initial action, sizing, street, confusion, and raw
+legality metrics are implemented. The seven available pipeline tests pass; seven
+PyTorch-dependent tests were skipped in the current environment. The next blocker
+is the reproducible trainer and fully resumable checkpointing, followed by the
+one-batch overfit and short smoke runs.
