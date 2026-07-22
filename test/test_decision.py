@@ -10,7 +10,7 @@ except ImportError:
 
 from poker_pipeline.tokenizer import (
     DECISION_TOKENS,
-    RANGE_TOKENS,
+    SIZING_OUTPUT_TOKENS,
     PokerTokenizer,
     default_range_representatives,
 )
@@ -35,7 +35,7 @@ class DecisionTests(unittest.TestCase):
 
         self.logits[self.meta["stoi"]["ACTION_FOLD"]] = 2.0
         self.logits[self.meta["stoi"]["ACTION_PASSIVE"]] = 2.1
-        for token in RANGE_TOKENS:
+        for token in SIZING_OUTPUT_TOKENS:
             self.logits[self.meta["stoi"][token]] = 0.0
         self.logits[self.meta["stoi"]["ACTION_ALL_IN"]] = 1.0
         distribution = decision_distribution(self.logits, self.meta)

@@ -395,3 +395,196 @@ legality metrics are implemented. The seven available pipeline tests pass; seven
 PyTorch-dependent tests were skipped in the current environment. The next blocker
 is the reproducible trainer and fully resumable checkpointing, followed by the
 one-batch overfit and short smoke runs.
+
+## 2026-07-20 - Full HandHQ eligibility and selection-bias audit
+
+**Context.** HandHQ was the main candidate for adding varied stacks and table
+sizes to the Pluribus baseline, but bounded first-hand samples had found no hand
+combining finite stacks with known hero cards. A sample could not rule out a rare
+usable intersection elsewhere in the archive.
+
+**Method.** Added `audit_handhq.py` and a streaming audit module. The audit read
+and released one ZIP member at a time, retained no hand histories or player
+identifiers, and wrote compact aggregate JSON and Markdown reports. It inspected
+all 21,782 HandHQ members and all 21,606,087 contained NT hands. A candidate
+required finite nonnegative starting stacks for every seat and two known cards
+for at least one acting player; candidates would then have been required to pass
+the existing complete exact-`Decimal` replay. Known-card selection was measured
+against unknown-card actors within the same known-card hands to control for
+hand- and site-level differences.
+
+**Evidence.** The complete four-way census found:
+
+- 15,609,342 finite-stack hands with no known-card actor;
+- 813,467 nonfinite-stack hands with at least one known-card actor;
+- 5,183,278 nonfinite-stack hands with no known-card actor;
+- zero finite-stack hands with a known-card actor.
+
+Thus HandHQ contributes zero candidate hands, zero replay-valid trajectories,
+and zero supervised decisions under the current representation. The audit had
+one known zero-byte member, zero parse errors among nonempty members, and no
+malformed NT hands.
+
+The known-card subset is also severely selected. In known-card hands, 1,177,710
+known-card acting perspectives folded 0.27%, acted postflop 99.83%, and had a
+showdown/muck marker 57.12% of the time. The 3,152,499 unknown-card acting
+perspectives in those same hands folded 84.73%, acted postflop 20.71%, and had a
+showdown/muck marker 15.23% of the time.
+
+**Decision.** Exclude HandHQ from current supervised training, not merely from
+the first baseline. Reconsider it only if another source supplies finite stacks
+or a future reconstruction method is causally valid and explicitly addresses
+the demonstrated known-card selection bias.
+
+**Outcome.** The central HandHQ uncertainty is resolved. Pluribus remains the
+six-max anchor; HandHQ cannot supply the proposed varied-stack expansion under
+the current data contract.
+
+**Related artifacts.** `audit_handhq.py`, `poker_pipeline/handhq_audit.py`,
+`data/processed/handhq_audit.json`, and `data/processed/handhq_audit.md`.
+
+## 2026-07-21 - First-baseline schema locked to Pluribus fixed format
+
+**Source-contract audit.** A streaming pass over all 10,000 selected Pluribus
+members confirmed one exact format: every hand is six-player NT, every seat
+starts at 100 BB, every ante is zero, and normalized blinds are
+`(0.5, 1, 0, 0, 0, 0)`. The source's literal 50/100 chip values are not part of
+the model contract because all chip amounts are normalized by the big blind.
+The resulting baseline is six-max 100-BB play with arbitrary chip denomination.
+
+**Token redundancy audit.** The validated v0.7.0 binaries contain 58,942
+trajectories, 3,736,674 total tokens, and 91,356 supervised tokens.
+`TABLE_SIZE` and `COUNT_6` each occur exactly 58,942 times. `POST_BLIND` occurs
+117,884 times, while `VALUE_BB_0.5` and `VALUE_BB_1` each occur 58,942 times.
+`POST_ANTE`, `POST_STRADDLE`, `COUNT_2`, `COUNT_7` through `COUNT_10`, and
+`PLAYER_7` through `PLAYER_10` have zero corpus frequency. `<PAD>` also has zero
+stored frequency by design because padding is added only during batching.
+
+**Accepted position encoding.** Remove `TABLE_SIZE COUNT_6` and both encoded
+blind posts. Begin every trajectory with exactly one of
+`POSITION_SMALL_BLIND`, `POSITION_BIG_BLIND`, `POSITION_UTG`,
+`POSITION_HIJACK`, `POSITION_CUTOFF`, or `POSITION_BUTTON`. Relative player
+numbers remain clockwise from the hero, so the single position token anchors all
+six seats. Replay still applies the forced posts internally to compute exact
+pot, call, contribution, and remaining-stack state; only their redundant token
+emission is removed. The encoder rejects trajectories outside the audited
+six-max, 100-BB, ante-free, unstraddled 0.5/1-BB contract.
+
+This replaces eight constant tokens with one token per trajectory, saving
+exactly seven tokens each and 412,594 tokens corpus-wide. The implied v0.8.0
+lengths are minimum 31, median 39, 95th percentile 150, 99th percentile 183,
+and maximum 264. Retain `block_size = 320` rather than retuning context for this
+small fixed-prefix reduction.
+
+**Sizing-output audit.** All nonzero range buckets remain in the vocabulary
+because deep ranges carry substantial context information. For example,
+`RANGE_20_TO_50`, `RANGE_50_TO_75`, `RANGE_75_TO_100`,
+`RANGE_100_TO_150`, and `RANGE_GT_150` occur in context 6,002, 3,253,
+307,888, 371, and 33 times respectively, but have zero supervised occurrences.
+The valid sizing outputs are therefore fixed to the corpus-observed ranges from
+`RANGE_0_TO_0.25` through `RANGE_10_TO_20`; the final two have one supervised
+training example each. Deeper buckets are context-only and are excluded from
+decision-logit renormalization and executable representatives. `ACTION_ALL_IN`
+continues to represent aggressive actions that consume the remaining stack.
+
+**Schema impact.** Pipeline version 0.8.0 uses format
+`pluribus_6max_100bb_position_single_decision_v4` and a 107-token vocabulary.
+The vocabulary retains only board counts 0, 1, 3, 4, and 5 and players 1-6.
+Metadata now records the fixed game contract, position-token set, full context
+range set, and narrower sizing-output set. Validation requires the exact current
+version, format, vocabulary mappings, game contract, decision outputs,
+representatives, and one position prefix per trajectory. `stats.json` now records
+total, context, and supervised frequency for every vocabulary token; artifact
+validation recomputes those counts from the binaries and requires an exact match.
+
+**Validation status.** Fixture preprocessing, all six position mappings,
+vocabulary pruning, fixed-contract rejection, metadata, binary alignment, and
+artifact validation tests pass. The production binaries below `data/processed/`
+remain validated v0.7.0 artifacts and are intentionally stale until the next
+step regenerates the full Pluribus corpus under v0.8.0. Do not begin training
+with those stale binaries.
+
+## 2026-07-21 - Replace coarse BB stacks with per-player stack-to-pot state
+
+**Problem found before regeneration.** The fixed 100-BB corpus makes the existing
+`STACK_BB` observation nearly constant: 99.15% of hero decisions are in
+`RANGE_75_TO_100`, 90% retain at least 95.25 BB, only 780 of 91,356 decisions
+occur at 75 BB or less, and only 40 occur at 50 BB or less. The bucket therefore
+aliases materially different stacks such as 76 BB and 99.5 BB. Removing stacks
+entirely is still unsafe because bucketed action history cannot reconstruct exact
+remaining all-in capacity or side-pot exposure.
+
+**Accepted replacement.** Replace each active player's
+`STACK_BB RANGE_*` pair with `STACK_POT RANGE_*`, calculated using exact remaining
+chips divided by the exact public pot before the decision and then assigned to
+the shared range vocabulary. Keep `STATUS_ALL_IN` as the exact zero-stack state
+and omit its redundant `STACK_POT RANGE_ZERO` pair. This is a player-specific
+stack-to-pot feature; it should not be confused with a single table-wide
+effective-SPR summary.
+
+The full streaming trial produced 309,561 active-player `STACK_POT` observations:
+46.87% fall in `RANGE_50_TO_75`, 28.27% in `RANGE_20_TO_50`, 13.02% in
+`RANGE_10_TO_20`, 7.51% in `RANGE_5_TO_10`, and 4.33% below 5. The feature is
+substantially better distributed while retaining every nonfolded player's
+approximate all-in capacity relative to the current pot.
+
+**Additional redundancy removals.** Omit `CURRENT_BOARD COUNT_0` preflop because
+the absence of a preceding board reveal already establishes an empty board. Keep
+`CURRENT_BOARD COUNT_3/4/5` and all visible cards after a reveal. Also remove the
+`<PLAYER_STATES>` delimiter: the state records begin deterministically after the
+fixed `TO_CALL_BB RANGE_*` pair. Validation now tracks causal `BOARD_REVEAL`
+events and requires every postflop local board copy to match the complete visible
+board exactly, while requiring the preflop observation to proceed directly to
+`POT_SIZE_BB`.
+
+**Final v0.8.0 contract.** This revision supersedes the earlier unreleased v4
+schema entry above. Version 0.8.0 now uses format
+`pluribus_6max_100bb_spr_position_single_decision_v5` and a 105-token vocabulary.
+A full streaming trial below `test/artifacts/schema-v08-spr-audit/` processed all
+10,000 Pluribus hands into 58,942 trajectories and 91,356 supervised decisions
+with zero parse errors. It contains 3,108,586 tokens, 628,088 fewer than v0.7.0.
+Measured trajectory lengths are minimum 28, median 36, 95th percentile 144,
+99th percentile 175, and maximum 255; all remain below `block_size = 320`.
+
+Artifact validation passed vocabulary and metadata identity, causal board
+framing, position prefixes, one target per decision, token-frequency agreement,
+binary alignment, context limits, and split isolation. Production artifacts in
+`data/processed/` remain intentionally untouched v0.7.0 outputs until the next
+production regeneration step.
+
+## 2026-07-22 - Production v0.8.0 regeneration and portable training bundle
+
+**Production regeneration.** Streamed the 10,000 selected Pluribus members from
+`poker-hand-histories.zip` directly into `data/processed/` under the finalized
+v0.8.0 schema. The source archive was never extracted. The run reproduced the
+full-trial counts: 58,942 trajectories, 91,356 supervised decisions, 3,108,586
+tokens, zero parse errors, and no trajectory above `block_size = 320`.
+
+Validation passed schema and vocabulary identity, decision targets, causal board
+framing, position prefixes, token-frequency agreement, binary alignment, context
+lengths, and train/validation group isolation. Training contains 53,045
+trajectories and 82,319 targets; validation contains 5,897 trajectories and 9,037
+targets. The production maximum trajectory is 255 tokens.
+
+**Portable bundle.** Packaged the files required for training and artifact audit
+as `artifacts/pokergpt-pluribus-v0.8.0.zip`. The bundle is 997,386 bytes and has
+SHA-256
+`E2C1B3B75AB02623EB06A93167D221105BEA259889294A9351D48D457CA1DDD6`.
+It includes train/validation token binaries, aligned loss masks, trajectory
+indexes, `meta.pkl`, statistics, preprocessing and validation manifests, parse
+errors, and audit samples. A training machine can extract this bundle into
+`data/processed/` and does not need the 20 GB raw archive.
+
+The repository globally ignores generated `.bin` and `.pkl` files, so the single
+versioned ZIP is the intended portable repository payload. Keep it private unless
+the source dataset's redistribution terms have been confirmed for public release.
+
+**Manifest integrity correction.** The first bundle draft exposed that the
+preprocessing manifest enumerated unrelated pre-existing files in its output
+directory, including HandHQ reports and the prior validation report. Restricted
+the manifest to the ten files actually produced by preprocessing and extended
+artifact validation to recompute and require every declared byte length and
+SHA-256. Regenerated and revalidated production artifacts, then rebuilt the
+portable bundle. The corrected bundle is 997,224 bytes with SHA-256
+`72C6EFE9D8AA69B26F2FD0640874E30A757CF9ACE05334A6E28E26D16822A00B`;
+the earlier draft checksum in this entry is superseded and must not be used.

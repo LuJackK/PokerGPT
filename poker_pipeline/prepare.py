@@ -11,12 +11,15 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
-from . import __version__
+from . import ARTIFACT_FORMAT, PREPARED_OUTPUT_NAMES, __version__
 from .io_utils import read_jsonl
 from .phh import Decision, build_hero_trajectories, iter_archive_hand_decisions
 from .tokenizer import (
+    CONTEXT_ONLY_RANGE_TOKENS,
     DECISION_TOKENS,
+    POSITION_TOKENS,
     RANGE_TOKENS,
+    SIZING_OUTPUT_TOKENS,
     EncodedTrajectory,
     PokerTokenizer,
     default_range_representatives,
@@ -106,15 +109,30 @@ def prepare_dataset(
         selection = selection[: options.max_members]
     if not selection:
         raise ValueError("Selection is empty")
+    invalid_contract_rows = [
+        row
+        for row in selection
+        if row.get("source_folder") != "pluribus"
+        or tuple(row.get("selected_player_counts", ())) != (6,)
+    ]
+    if invalid_contract_rows:
+        member = invalid_contract_rows[0].get("member", "<unknown>")
+        raise ValueError(
+            "The fixed training schema accepts only selected Pluribus six-max rows; "
+            f"first mismatch: {member}"
+        )
     tokenizer = PokerTokenizer()
     writers = {split: SplitWriter(output_dir, split) for split in ("train", "val")}
     counts: Counter[str] = Counter()
+    token_counts: Counter[str] = Counter()
+    context_token_counts: Counter[str] = Counter()
+    supervised_token_counts: Counter[str] = Counter()
     sequence_lengths: list[int] = []
     decisions_per_trajectory: list[int] = []
     errors: list[dict[str, str]] = []
     audit: list[dict[str, Any]] = []
     training_range_ratios: dict[str, list[Decimal]] = {
-        token: [] for token in RANGE_TOKENS
+        token: [] for token in SIZING_OUTPUT_TOKENS
     }
     committed = False
     try:
@@ -149,6 +167,17 @@ def prepare_dataset(
                         "history truncation is disabled."
                     )
                 writers[split].write(encoded)
+                token_counts.update(encoded.tokens)
+                context_token_counts.update(
+                    token
+                    for token, supervised in zip(encoded.tokens, encoded.loss_mask)
+                    if not supervised
+                )
+                supervised_token_counts.update(
+                    token
+                    for token, supervised in zip(encoded.tokens, encoded.loss_mask)
+                    if supervised
+                )
                 sequence_lengths.append(len(encoded.ids))
                 decisions_per_trajectory.append(trajectory.decision_count)
                 counts[f"split:{split}:trajectories"] += 1
@@ -194,7 +223,7 @@ def prepare_dataset(
     fallback_representatives = default_range_representatives()
     range_representatives: dict[str, str] = {}
     range_representative_sources: dict[str, str] = {}
-    for token in RANGE_TOKENS:
+    for token in SIZING_OUTPUT_TOKENS:
         observed = training_range_ratios[token]
         if observed:
             representative = _median_decimal(observed)
@@ -207,7 +236,7 @@ def prepare_dataset(
 
     meta = {
         "version": __version__,
-        "format": "complete_player_perspective_single_decision_token_v3",
+        "format": ARTIFACT_FORMAT,
         "vocab_size": len(tokenizer.itos),
         "stoi": tokenizer.stoi,
         "itos": tokenizer.itos,
@@ -219,25 +248,46 @@ def prepare_dataset(
         "decision_tokens": list(DECISION_TOKENS),
         "decision_token_ids": [tokenizer.stoi[token] for token in DECISION_TOKENS],
         "range_tokens": list(RANGE_TOKENS),
+        "sizing_output_tokens": list(SIZING_OUTPUT_TOKENS),
+        "context_only_range_tokens": list(CONTEXT_ONLY_RANGE_TOKENS),
+        "position_tokens": list(POSITION_TOKENS),
         "range_representative_ratio": range_representatives,
         "range_representative_source": range_representative_sources,
         "normalization": {
             "chip_arithmetic": "decimal_exact",
+            "unit": "big_blind",
+            "chip_denominations": "arbitrary; all amounts normalized by the big blind",
             "amount_features": [
                 "incremental_chips_over_big_blind",
                 "incremental_chips_over_pot_before_action",
             ],
             "amount_buckets": "shared non-overlapping RANGE_* tokens",
+            "state_features": ["remaining_stack_over_pot_before_decision"],
         },
         "privacy": "one complete trajectory per hero; opponent private cards omitted",
         "legality": "not encoded or stored; replay validates source actions only",
-        "perspective": "hero is PLAYER_1; other seats numbered clockwise",
-        "events": "forced posts, public actions, and board reveals are chronological",
+        "game_contract": {
+            "variant": "NT",
+            "players": 6,
+            "starting_depth_bb": "100",
+            "antes": False,
+            "straddles": False,
+            "blinds_bb": ["0.5", "1"],
+        },
+        "perspective": (
+            "hero is PLAYER_1; other seats numbered clockwise; one hero-position "
+            "token anchors all seats"
+        ),
+        "events": "public actions and board reveals are chronological; blind posts are implicit in position",
         "observations": (
-            "hero cards, complete current board, public pot, call amount, status, "
-            "and stack state precede each hero decision"
+            "hero cards, nonempty complete current board, public pot, call amount, "
+            "status, and per-player stack-to-pot state precede each hero decision"
         ),
         "loss": "exactly one compressed decision-token target per hero decision",
+        "sizing_outputs": (
+            "only corpus-observed non-all-in sizing ranges are decodable; deeper "
+            "range tokens remain context-only"
+        ),
         "batching": "sample complete indexed trajectories; never random-crop across boundaries",
     }
     with (output_dir / "meta.pkl").open("wb") as handle:
@@ -263,6 +313,14 @@ def prepare_dataset(
         "training_range_representative_samples": {
             token: len(values) for token, values in training_range_ratios.items()
         },
+        "token_frequency": {
+            token: {
+                "total": token_counts[token],
+                "context": context_token_counts[token],
+                "supervised": supervised_token_counts[token],
+            }
+            for token in tokenizer.itos
+        },
         "parse_error_count": len(errors),
         "writer_trajectories": {
             split: writer.trajectory_count for split, writer in writers.items()
@@ -280,9 +338,11 @@ def prepare_dataset(
         "selection_sha256": _sha256(selection_path),
         "options": asdict(options),
         "outputs": {
-            path.name: {"bytes": path.stat().st_size, "sha256": _sha256(path)}
-            for path in sorted(output_dir.iterdir())
-            if path.is_file() and path.name != "preprocessing_manifest.json"
+            name: {
+                "bytes": (output_dir / name).stat().st_size,
+                "sha256": _sha256(output_dir / name),
+            }
+            for name in PREPARED_OUTPUT_NAMES
         },
     }
     (output_dir / "preprocessing_manifest.json").write_text(

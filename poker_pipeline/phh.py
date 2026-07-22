@@ -64,6 +64,7 @@ class Decision:
     to_call: Decimal
     current_bet: Decimal
     big_blind: Decimal
+    starting_stacks: tuple[Decimal, ...]
     hero_stack: Decimal
     effective_stack: Decimal
     player_stacks: tuple[Decimal, ...]
@@ -99,6 +100,7 @@ class ReplayState:
     hand_key: str
     player_count: int
     big_blind: Decimal
+    starting_stacks: tuple[Decimal, ...]
     stacks: list[Decimal]
     street_contrib: list[Decimal]
     total_contrib: list[Decimal]
@@ -228,6 +230,7 @@ def _initial_state(member: str, hand_key: str, hand: dict[str, Any]) -> ReplaySt
         hand_key=hand_key,
         player_count=count,
         big_blind=big_blind,
+        starting_stacks=tuple(starting_stacks),
         stacks=stacks,
         street_contrib=street_contrib,
         total_contrib=posted,
@@ -270,6 +273,7 @@ def _decision(
         to_call=owed,
         current_bet=state.current_bet,
         big_blind=state.big_blind,
+        starting_stacks=state.starting_stacks,
         hero_stack=state.stacks[actor],
         effective_stack=effective,
         player_stacks=tuple(state.stacks),

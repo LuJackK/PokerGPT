@@ -48,7 +48,24 @@ RANGE_THRESHOLDS = tuple(
     )
 )
 RANGE_TOKENS = tuple(f"RANGE_{label}" for label in RANGE_LABELS if label != "ZERO")
-DECISION_TOKENS = ("ACTION_FOLD", "ACTION_PASSIVE", *RANGE_TOKENS, "ACTION_ALL_IN")
+SIZING_OUTPUT_TOKENS = RANGE_TOKENS[:10]
+CONTEXT_ONLY_RANGE_TOKENS = RANGE_TOKENS[len(SIZING_OUTPUT_TOKENS) :]
+DECISION_TOKENS = (
+    "ACTION_FOLD",
+    "ACTION_PASSIVE",
+    *SIZING_OUTPUT_TOKENS,
+    "ACTION_ALL_IN",
+)
+POSITION_TOKENS = (
+    "POSITION_SMALL_BLIND",
+    "POSITION_BIG_BLIND",
+    "POSITION_UTG",
+    "POSITION_HIJACK",
+    "POSITION_CUTOFF",
+    "POSITION_BUTTON",
+)
+COUNT_TOKENS = tuple(f"COUNT_{count}" for count in (1, 3, 4, 5))
+PLAYER_TOKENS = tuple(f"PLAYER_{number}" for number in range(1, 7))
 
 
 def range_label(value: object) -> str:
@@ -66,13 +83,12 @@ ratio_label = range_label
 
 
 def default_range_representatives() -> dict[str, Decimal]:
-    """Return deterministic in-bucket fallbacks for ranges absent from training."""
+    """Return deterministic fallbacks for executable sizing-output ranges."""
     representatives: dict[str, Decimal] = {}
     lower = Decimal(0)
-    for threshold, token in zip(RANGE_THRESHOLDS, RANGE_TOKENS[:-1]):
+    for threshold, token in zip(RANGE_THRESHOLDS, SIZING_OUTPUT_TOKENS):
         representatives[token] = (lower + threshold) / 2
         lower = threshold
-    representatives[RANGE_TOKENS[-1]] = lower * Decimal("1.5")
     return representatives
 
 
@@ -82,26 +98,20 @@ def build_vocabulary() -> list[str]:
         "<BOS>",
         "<EOS>",
         "<PLAYER_1_DECISION>",
-        "<PLAYER_STATES>",
-        "TABLE_SIZE",
         "PLAYER_1_HOLE_CARDS",
         "CURRENT_BOARD",
         "BOARD_REVEAL",
         "POT_SIZE_BB",
         "TO_CALL_BB",
-        "STACK_BB",
+        "STACK_POT",
         "AMOUNT_BB",
         "AMOUNT_POT",
-        "POST_ANTE",
-        "POST_BLIND",
-        "POST_STRADDLE",
-        "VALUE_BB_0.5",
-        "VALUE_BB_1",
         "STATUS_ACTIVE",
         "STATUS_ALL_IN",
     ]
-    tokens += [f"COUNT_{count}" for count in range(11)]
-    tokens += [f"PLAYER_{number}" for number in range(1, 11)]
+    tokens += list(POSITION_TOKENS)
+    tokens += list(COUNT_TOKENS)
+    tokens += list(PLAYER_TOKENS)
     tokens += [f"CARD_{rank}{suit}" for rank in RANKS for suit in SUITS]
     tokens += [f"ACTION_{action}" for action in (*PUBLIC_ACTIONS, *HERO_ACTIONS)]
     tokens += [f"RANGE_{label}" for label in RANGE_LABELS]
@@ -149,7 +159,51 @@ class PokerTokenizer:
         token = self._range(decision.target_amount_pot)
         if token == "RANGE_ZERO":
             raise ValueError("RANGE_ZERO is not a valid aggressive hero decision")
+        if token not in SIZING_OUTPUT_TOKENS:
+            raise ValueError(
+                f"Aggressive target {token} is context-only in the fixed Pluribus schema"
+            )
         return token
+
+    @staticmethod
+    def _hero_position_token(trajectory: HeroTrajectory) -> str:
+        if trajectory.player_count != 6:
+            raise ValueError(
+                "The fixed Pluribus schema requires exactly six players"
+            )
+        forced_posts = [
+            item for item in trajectory.items if isinstance(item, ForcedPost)
+        ]
+        expected_amounts = (Decimal("0.5"), Decimal(1))
+        if (
+            len(forced_posts) != 2
+            or any(post.kind != "POST_BLIND" for post in forced_posts)
+            or tuple(post.amount_bb for post in forced_posts) != expected_amounts
+        ):
+            raise ValueError(
+                "The fixed Pluribus schema requires no antes/straddles and exactly "
+                "0.5/1 BB blind posts"
+            )
+        small_blind, big_blind = (post.player for post in forced_posts)
+        if big_blind != (small_blind + 1) % trajectory.player_count:
+            raise ValueError("Blind seats are not consecutive clockwise")
+        offset = (trajectory.hero - small_blind) % trajectory.player_count
+        return POSITION_TOKENS[offset]
+
+    @staticmethod
+    def _validate_starting_depth(trajectory: HeroTrajectory) -> None:
+        first_decision = next(
+            (item for item in trajectory.items if isinstance(item, Decision)), None
+        )
+        if first_decision is None:
+            raise ValueError("A trajectory requires at least one hero decision")
+        starting_depths = tuple(
+            stack / first_decision.big_blind for stack in first_decision.starting_stacks
+        )
+        if starting_depths != (Decimal(100),) * 6:
+            raise ValueError(
+                "The fixed Pluribus schema requires every seat to start at 100 BB"
+            )
 
     def _append_public_event(
         self, tokens: list[str], event: ForcedPost | BoardReveal | HistoryAction, trajectory: HeroTrajectory
@@ -158,16 +212,10 @@ class PokerTokenizer:
             tokens += ["BOARD_REVEAL", f"COUNT_{event.count}"]
             tokens += [f"CARD_{card}" for card in event.cards]
             return
-        player = self._player_token(event.player, trajectory.hero, trajectory.player_count)
         if isinstance(event, ForcedPost):
-            tokens += [player, event.kind]
-            if event.amount_bb == Decimal("0.5"):
-                tokens.append("VALUE_BB_0.5")
-            elif event.amount_bb == Decimal(1):
-                tokens.append("VALUE_BB_1")
-            else:
-                tokens += ["AMOUNT_BB", self._range(event.amount_bb)]
+            # The single hero-position token encodes both blind identities.
             return
+        player = self._player_token(event.player, trajectory.hero, trajectory.player_count)
         if isinstance(event, HistoryAction):
             tokens += [player, f"ACTION_{event.action}"]
             if event.amount > 0:
@@ -183,20 +231,27 @@ class PokerTokenizer:
     def _append_hero_decision(
         self, tokens: list[str], mask: list[int], decision: Decision, trajectory: HeroTrajectory
     ) -> None:
-        tokens += [
+        if decision.pot <= 0:
+            raise ValueError("A decision requires a positive public pot")
+        observation_tokens = [
             "<PLAYER_1_DECISION>",
             "PLAYER_1_HOLE_CARDS",
             *(f"CARD_{card}" for card in decision.hero_cards),
-            "CURRENT_BOARD",
-            f"COUNT_{len(decision.board)}",
-            *(f"CARD_{card}" for card in decision.board),
+        ]
+        if decision.board:
+            observation_tokens += [
+                "CURRENT_BOARD",
+                f"COUNT_{len(decision.board)}",
+                *(f"CARD_{card}" for card in decision.board),
+            ]
+        observation_tokens += [
             "POT_SIZE_BB",
             self._range(decision.pot / decision.big_blind),
             "TO_CALL_BB",
             self._range(decision.to_call / decision.big_blind),
-            "<PLAYER_STATES>",
         ]
-        mask.extend([0] * (11 + len(decision.board)))
+        tokens += observation_tokens
+        mask.extend([0] * len(observation_tokens))
         for original_player in range(decision.player_count):
             player = self._player_token(original_player, trajectory.hero, trajectory.player_count)
             status = decision.player_statuses[original_player]
@@ -205,9 +260,12 @@ class PokerTokenizer:
             state_tokens = [
                 player,
                 f"STATUS_{status}",
-                "STACK_BB",
-                self._range(decision.player_stacks[original_player] / decision.big_blind),
             ]
+            if status != "ALL_IN":
+                state_tokens += [
+                    "STACK_POT",
+                    self._range(decision.player_stacks[original_player] / decision.pot),
+                ]
             tokens += state_tokens
             mask.extend([0] * len(state_tokens))
         tokens.append(self.hero_decision_token(decision))
@@ -216,10 +274,11 @@ class PokerTokenizer:
     def encode_trajectory(self, trajectory: HeroTrajectory) -> EncodedTrajectory:
         if len(trajectory.hero_cards) != 2 or any(card == "??" for card in trajectory.hero_cards):
             raise ValueError("A trajectory requires two known hero cards")
+        position_token = self._hero_position_token(trajectory)
+        self._validate_starting_depth(trajectory)
         tokens = [
             "<BOS>",
-            "TABLE_SIZE",
-            f"COUNT_{trajectory.player_count}",
+            position_token,
         ]
         mask = [0] * len(tokens)
         for item in trajectory.items:

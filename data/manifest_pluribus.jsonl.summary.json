@@ -1,0 +1,14 @@
+{
+  "archive": "C:\\Users\\lukajackk\\Desktop\\PokerGPT\\poker-hand-histories.zip",
+  "counts_for_added_rows": {
+    "source:pluribus": 10000,
+    "variant:NT": 10000
+  },
+  "header_bytes": 8192,
+  "member_prefixes": [
+    "data/pluribus/"
+  ],
+  "output": "C:\\Users\\lukajackk\\Desktop\\PokerGPT\\data\\manifest_pluribus.jsonl",
+  "rows_added": 10000,
+  "rows_preexisting": 0
+}

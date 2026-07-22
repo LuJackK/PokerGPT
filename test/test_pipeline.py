@@ -14,7 +14,15 @@ from poker_pipeline.manifest import ManifestOptions, build_manifest
 from poker_pipeline.phh import Decision, build_hero_trajectories, parse_document, replay_hand
 from poker_pipeline.prepare import PrepareOptions, prepare_dataset
 from poker_pipeline.selection import SelectionOptions, select_dataset
-from poker_pipeline.tokenizer import DECISION_TOKENS, PokerTokenizer, ratio_label
+from poker_pipeline.tokenizer import (
+    CONTEXT_ONLY_RANGE_TOKENS,
+    DECISION_TOKENS,
+    POSITION_TOKENS,
+    RANGE_TOKENS,
+    SIZING_OUTPUT_TOKENS,
+    PokerTokenizer,
+    ratio_label,
+)
 from poker_pipeline.validate import validate_artifacts
 
 
@@ -118,7 +126,7 @@ class PipelineTests(unittest.TestCase):
         decisions = list(replay_hand("fixture.phh", "1", hand))
         trajectories = build_hero_trajectories(decisions)
         tokenizer = PokerTokenizer()
-        self.assertEqual(len(tokenizer.itos), 117)
+        self.assertEqual(len(tokenizer.itos), 105)
         self.assertNotIn("RANGE_GT_50", tokenizer.stoi)
         self.assertIn("RANGE_50_TO_75", tokenizer.stoi)
         self.assertIn("RANGE_75_TO_100", tokenizer.stoi)
@@ -127,16 +135,47 @@ class PipelineTests(unittest.TestCase):
         self.assertIn("ACTION_PASSIVE", tokenizer.stoi)
         self.assertIn("ACTION_ALL_IN", tokenizer.stoi)
         self.assertNotIn("RANGE_ZERO", DECISION_TOKENS)
+        self.assertEqual(
+            SIZING_OUTPUT_TOKENS,
+            RANGE_TOKENS[:10],
+        )
+        self.assertNotIn("RANGE_20_TO_50", DECISION_TOKENS)
+        self.assertIn("RANGE_20_TO_50", CONTEXT_ONLY_RANGE_TOKENS)
+        self.assertIn("RANGE_20_TO_50", tokenizer.stoi)
+        self.assertNotIn("TABLE_SIZE", tokenizer.stoi)
+        self.assertNotIn("POST_BLIND", tokenizer.stoi)
+        self.assertNotIn("POST_ANTE", tokenizer.stoi)
+        self.assertNotIn("POST_STRADDLE", tokenizer.stoi)
+        self.assertNotIn("VALUE_BB_0.5", tokenizer.stoi)
+        self.assertNotIn("VALUE_BB_1", tokenizer.stoi)
+        self.assertNotIn("COUNT_2", tokenizer.stoi)
+        self.assertNotIn("COUNT_0", tokenizer.stoi)
+        self.assertNotIn("COUNT_6", tokenizer.stoi)
+        self.assertNotIn("PLAYER_7", tokenizer.stoi)
+        self.assertNotIn("<PLAYER_STATES>", tokenizer.stoi)
+        self.assertNotIn("STACK_BB", tokenizer.stoi)
+        self.assertIn("STACK_POT", tokenizer.stoi)
+
+        expected_positions = {
+            0: "POSITION_SMALL_BLIND",
+            1: "POSITION_BIG_BLIND",
+            2: "POSITION_UTG",
+            3: "POSITION_HIJACK",
+            4: "POSITION_CUTOFF",
+            5: "POSITION_BUTTON",
+        }
+        for trajectory in trajectories:
+            encoded_position = tokenizer.encode_trajectory(trajectory).tokens[1]
+            self.assertEqual(encoded_position, expected_positions[trajectory.hero])
+            self.assertIn(encoded_position, POSITION_TOKENS)
+
         early_fold = next(trajectory for trajectory in trajectories if trajectory.hero == 2)
         encoded = tokenizer.encode_trajectory(early_fold)
+        self.assertEqual(encoded.tokens[:2], ("<BOS>", "POSITION_UTG"))
         self.assertIn("CARD_8h", encoded.tokens)  # acting player's cards
         self.assertIn("CARD_5h", encoded.tokens)
         self.assertNotIn("CARD_6s", encoded.tokens)  # opponent private card
         self.assertNotIn("CARD_Ah", encoded.tokens)  # future flop card
-        self.assertIn("PLAYER_5", encoded.tokens)  # original p1, relative to hero p3
-        self.assertIn("PLAYER_6", encoded.tokens)  # original p2, relative to hero p3
-        self.assertIn("VALUE_BB_0.5", encoded.tokens)
-        self.assertIn("VALUE_BB_1", encoded.tokens)
         self.assertNotIn("<EVENT_SEQUENCE>", encoded.tokens)
         self.assertFalse(any(token.startswith("STREET_") for token in encoded.tokens))
         self.assertFalse(any(token.startswith("HIST_STREET_") for token in encoded.tokens))
@@ -152,7 +191,16 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(
             full.tokens.count("PLAYER_1_HOLE_CARDS"), multi_decision.decision_count
         )
-        self.assertEqual(full.tokens.count("CURRENT_BOARD"), multi_decision.decision_count)
+        postflop_decisions = sum(
+            bool(decision.board)
+            for decision in multi_decision.items
+            if isinstance(decision, Decision)
+        )
+        self.assertEqual(full.tokens.count("CURRENT_BOARD"), postflop_decisions)
+        self.assertNotIn("COUNT_0", full.tokens)
+        self.assertNotIn("<PLAYER_STATES>", full.tokens)
+        self.assertNotIn("STACK_BB", full.tokens)
+        self.assertIn("STACK_POT", full.tokens)
         self.assertIn("BOARD_REVEAL", full.tokens)
         self.assertIn("COUNT_3", full.tokens)
         self.assertIn("CARD_9s", full.tokens)
@@ -187,12 +235,15 @@ class PipelineTests(unittest.TestCase):
         for offset, expected_board in zip(decision_offsets, expected_boards):
             self.assertEqual(full.tokens[offset + 1], "PLAYER_1_HOLE_CARDS")
             self.assertEqual(full.tokens[offset + 2 : offset + 4], ("CARD_6s", "CARD_6h"))
-            self.assertEqual(full.tokens[offset + 4], "CURRENT_BOARD")
-            self.assertEqual(full.tokens[offset + 5], f"COUNT_{len(expected_board)}")
-            self.assertEqual(
-                full.tokens[offset + 6 : offset + 6 + len(expected_board)],
-                tuple(f"CARD_{card}" for card in expected_board),
-            )
+            if expected_board:
+                self.assertEqual(full.tokens[offset + 4], "CURRENT_BOARD")
+                self.assertEqual(full.tokens[offset + 5], f"COUNT_{len(expected_board)}")
+                self.assertEqual(
+                    full.tokens[offset + 6 : offset + 6 + len(expected_board)],
+                    tuple(f"CARD_{card}" for card in expected_board),
+                )
+            else:
+                self.assertEqual(full.tokens[offset + 4], "POT_SIZE_BB")
 
     def test_aggressive_all_in_is_one_supervised_token(self) -> None:
         hand = parse_document(ALL_IN_HAND, "phh")[0][1]
@@ -206,6 +257,49 @@ class PipelineTests(unittest.TestCase):
         encoded = PokerTokenizer().encode_trajectory(trajectory)
         targets = [encoded.tokens[index] for index, bit in enumerate(encoded.loss_mask) if bit]
         self.assertEqual(targets, ["ACTION_ALL_IN"])
+
+        folding_trajectory = next(
+            item for item in build_hero_trajectories(decisions) if item.hero == 0
+        )
+        folding_tokens = PokerTokenizer().encode_trajectory(folding_trajectory).tokens
+        all_in_status = folding_tokens.index("STATUS_ALL_IN")
+        self.assertNotEqual(folding_tokens[all_in_status + 1], "STACK_POT")
+
+    def test_encoder_enforces_fixed_game_and_sizing_output_contracts(self) -> None:
+        ante_hand = parse_document(
+            HAND_1.replace(
+                "antes = [0, 0, 0, 0, 0, 0]",
+                "antes = [10, 10, 10, 10, 10, 10]",
+            ),
+            "phh",
+        )[0][1]
+        ante_trajectory = build_hero_trajectories(
+            list(replay_hand("ante.phh", "1", ante_hand))
+        )[0]
+        with self.assertRaisesRegex(ValueError, "no antes/straddles"):
+            PokerTokenizer().encode_trajectory(ante_trajectory)
+
+        short_stack_hand = parse_document(
+            HAND_1.replace("10000", "9900"), "phh"
+        )[0][1]
+        short_stack_trajectory = build_hero_trajectories(
+            list(replay_hand("short.phh", "1", short_stack_hand))
+        )[0]
+        with self.assertRaisesRegex(ValueError, "start at 100 BB"):
+            PokerTokenizer().encode_trajectory(short_stack_trajectory)
+
+        deep_raise_hand = parse_document(
+            HAND_1.replace("'p2 cbr 300'", "'p2 cbr 5000'"), "phh"
+        )[0][1]
+        deep_raise_trajectory = next(
+            trajectory
+            for trajectory in build_hero_trajectories(
+                list(replay_hand("deep-raise.phh", "1", deep_raise_hand))
+            )
+            if trajectory.hero == 1
+        )
+        with self.assertRaisesRegex(ValueError, "context-only"):
+            PokerTokenizer().encode_trajectory(deep_raise_trajectory)
 
     def test_end_to_end_binary_alignment_and_metadata(self) -> None:
         selection = self.root / "selected.jsonl"
@@ -244,19 +338,55 @@ class PipelineTests(unittest.TestCase):
         with (output / "meta.pkl").open("rb") as handle:
             meta = pickle.load(handle)
         self.assertEqual(meta["token_dtype"], "uint16_le")
-        self.assertEqual(meta["format"], "complete_player_perspective_single_decision_token_v3")
+        self.assertEqual(meta["version"], "0.8.0")
+        self.assertEqual(
+            meta["format"],
+            "pluribus_6max_100bb_spr_position_single_decision_v5",
+        )
         self.assertEqual(meta["block_size"], 320)
         self.assertEqual(meta["decision_tokens"], list(DECISION_TOKENS))
+        self.assertEqual(meta["sizing_output_tokens"], list(SIZING_OUTPUT_TOKENS))
+        self.assertEqual(
+            meta["context_only_range_tokens"], list(CONTEXT_ONLY_RANGE_TOKENS)
+        )
+        self.assertEqual(meta["position_tokens"], list(POSITION_TOKENS))
         self.assertNotIn("RANGE_ZERO", meta["decision_tokens"])
+        self.assertNotIn("RANGE_20_TO_50", meta["decision_tokens"])
+        self.assertNotIn("RANGE_20_TO_50", meta["range_representative_ratio"])
+        self.assertIn("RANGE_20_TO_50", meta["range_tokens"])
         self.assertEqual(
             meta["range_representative_source"]["RANGE_0.75_TO_1"],
             "training_split_median",
         )
         self.assertEqual(meta["range_representative_ratio"]["RANGE_0.75_TO_1"], "0.9")
         self.assertEqual(meta["privacy"], "one complete trajectory per hero; opponent private cards omitted")
-        self.assertEqual(json.loads((output / "stats.json").read_text())["parse_error_count"], 0)
+        self.assertEqual(meta["game_contract"]["starting_depth_bb"], "100")
+        output_stats = json.loads((output / "stats.json").read_text())
+        self.assertEqual(output_stats["parse_error_count"], 0)
+        self.assertEqual(
+            output_stats["token_frequency"]["ACTION_FOLD"]["supervised"],
+            output_stats["counts"]["decision_token:ACTION_FOLD"],
+        )
+        self.assertEqual(output_stats["token_frequency"]["<PAD>"]["total"], 0)
         validation = validate_artifacts(output, selection)
         self.assertTrue(validation["valid"], validation["errors"])
+
+    def test_preparation_rejects_selection_outside_fixed_baseline_contract(self) -> None:
+        selection = self.root / "selected-invalid.jsonl"
+        selection.write_text(
+            json.dumps(
+                {
+                    "member": "data/pluribus/session-a/47.phh",
+                    "source_folder": "acpc",
+                    "split": "train",
+                    "selected_player_counts": [6],
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "only selected Pluribus six-max"):
+            prepare_dataset(self.archive, selection, self.root / "invalid-output")
 
 
 if __name__ == "__main__":

@@ -1,16 +1,26 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import pickle
 import struct
 from array import array
+from collections import Counter
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
+from . import ARTIFACT_FORMAT, PREPARED_OUTPUT_NAMES, __version__
 from .io_utils import read_jsonl
-from .tokenizer import DECISION_TOKENS, RANGE_THRESHOLDS, RANGE_TOKENS
-
+from .tokenizer import (
+    CONTEXT_ONLY_RANGE_TOKENS,
+    DECISION_TOKENS,
+    POSITION_TOKENS,
+    RANGE_THRESHOLDS,
+    RANGE_TOKENS,
+    SIZING_OUTPUT_TOKENS,
+    build_vocabulary,
+)
 
 def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> dict[str, Any]:
     output_dir = Path(output_dir)
@@ -25,20 +35,66 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
     expected_decision_tokens = set(DECISION_TOKENS)
     metadata_decision_tokens = set(meta.get("decision_tokens", ()))
     report: dict[str, Any] = {"splits": {}, "errors": []}
+
+    manifest_path = output_dir / "preprocessing_manifest.json"
+    if not manifest_path.exists():
+        report["errors"].append("preprocessing_manifest.json is missing")
+    else:
+        preprocessing_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if preprocessing_manifest.get("pipeline_version") != __version__:
+            report["errors"].append(
+                "preprocessing manifest pipeline version does not match the pipeline"
+            )
+        declared_outputs = preprocessing_manifest.get("outputs", {})
+        if set(declared_outputs) != set(PREPARED_OUTPUT_NAMES):
+            report["errors"].append(
+                "preprocessing manifest output set does not match the pipeline"
+            )
+        else:
+            for name in PREPARED_OUTPUT_NAMES:
+                path = output_dir / name
+                if not path.exists():
+                    report["errors"].append(f"preprocessing output is missing: {name}")
+                    continue
+                expected = declared_outputs[name]
+                digest = hashlib.sha256(path.read_bytes()).hexdigest()
+                if (
+                    expected.get("bytes") != path.stat().st_size
+                    or expected.get("sha256") != digest
+                ):
+                    report["errors"].append(
+                        f"preprocessing output size/hash mismatch: {name}"
+                    )
+    if meta.get("version") != __version__:
+        report["errors"].append("meta.pkl pipeline version does not match the pipeline")
+    if meta.get("format") != ARTIFACT_FORMAT:
+        report["errors"].append("meta.pkl artifact format does not match the pipeline")
+    expected_vocabulary = build_vocabulary()
+    if itos != expected_vocabulary or vocab_size != len(expected_vocabulary):
+        report["errors"].append("meta.pkl vocabulary does not match the pipeline")
+    if meta.get("stoi") != {token: index for index, token in enumerate(itos)}:
+        report["errors"].append("meta.pkl stoi/itos mappings are inconsistent")
     if metadata_decision_tokens != expected_decision_tokens:
         report["errors"].append("meta.pkl decision-token set does not match the pipeline")
     if "RANGE_ZERO" in metadata_decision_tokens:
         report["errors"].append("meta.pkl permits RANGE_ZERO as a hero decision")
     if tuple(meta.get("range_tokens", ())) != RANGE_TOKENS:
         report["errors"].append("meta.pkl range-token set does not match the pipeline")
+    if tuple(meta.get("sizing_output_tokens", ())) != SIZING_OUTPUT_TOKENS:
+        report["errors"].append("meta.pkl sizing-output set does not match the pipeline")
+    if tuple(meta.get("context_only_range_tokens", ())) != CONTEXT_ONLY_RANGE_TOKENS:
+        report["errors"].append("meta.pkl context-only range set does not match the pipeline")
+    if tuple(meta.get("position_tokens", ())) != POSITION_TOKENS:
+        report["errors"].append("meta.pkl position-token set does not match the pipeline")
     representatives = meta.get("range_representative_ratio", {})
-    if set(representatives) != set(RANGE_TOKENS):
+    if set(representatives) != set(SIZING_OUTPUT_TOKENS):
         report["errors"].append(
-            "meta.pkl does not define exactly one representative for every range"
+            "meta.pkl does not define exactly one representative for every sizing output"
         )
     else:
-        lower = Decimal(0)
-        for index, token in enumerate(RANGE_TOKENS):
+        for token in SIZING_OUTPUT_TOKENS:
+            index = RANGE_TOKENS.index(token)
+            lower = Decimal(0) if index == 0 else RANGE_THRESHOLDS[index - 1]
             try:
                 representative = Decimal(str(representatives[token]))
             except (InvalidOperation, ValueError):
@@ -55,9 +111,21 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
                 report["errors"].append(
                     f"meta.pkl representative {representative} is outside {token}"
                 )
-            if upper is not None:
-                lower = upper
 
+    expected_game_contract = {
+        "variant": "NT",
+        "players": 6,
+        "starting_depth_bb": "100",
+        "antes": False,
+        "straddles": False,
+        "blinds_bb": ["0.5", "1"],
+    }
+    if meta.get("game_contract") != expected_game_contract:
+        report["errors"].append("meta.pkl game contract does not match the baseline")
+
+    token_counts: Counter[str] = Counter()
+    context_token_counts: Counter[str] = Counter()
+    supervised_token_counts: Counter[str] = Counter()
     for split in ("train", "val"):
         token_path = output_dir / f"{split}.bin"
         mask_path = output_dir / f"{split}_loss_mask.bin"
@@ -74,18 +142,31 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
             report["errors"].append(f"{split}: token/mask length mismatch")
         if any(token >= vocab_size for token in tokens):
             report["errors"].append(f"{split}: token ID outside vocabulary")
+        for token_id, supervised in zip(tokens, masks):
+            if token_id >= len(itos):
+                continue
+            token = itos[token_id]
+            token_counts[token] += 1
+            if supervised:
+                supervised_token_counts[token] += 1
+            else:
+                context_token_counts[token] += 1
         if any(mask not in (0, 1) for mask in masks):
             report["errors"].append(f"{split}: loss mask contains value other than 0/1")
         if offsets != sorted(set(offsets)):
             report["errors"].append(f"{split}: indexes are not unique and increasing")
         lengths: list[int] = []
         masked = 0
+        missing_position_prefixes = 0
+        invalid_decision_observations = 0
         for number, start in enumerate(offsets):
             end = offsets[number + 1] if number + 1 < len(offsets) else len(tokens)
             lengths.append(end - start)
             if end <= start or tokens[start] != bos_id or tokens[end - 1] != eos_id:
                 report["errors"].append(f"{split}: invalid framing at example {number}")
                 continue
+            if end - start < 3 or itos[tokens[start + 1]] not in POSITION_TOKENS:
+                missing_position_prefixes += 1
             if end - start > block_size:
                 report["errors"].append(f"{split}: example {number} exceeds block size")
             example_masked = [index for index in range(start, end) if masks[index]]
@@ -101,46 +182,64 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
                 index for index in range(start, end) if tokens[index] == decision_id
             ]
             decision_count = len(decision_positions)
+            visible_board: list[str] = []
             for index in range(start, end):
-                if tokens[index] != decision_id:
+                token = itos[tokens[index]]
+                if token == "BOARD_REVEAL":
+                    try:
+                        reveal_count = int(
+                            itos[tokens[index + 1]].removeprefix("COUNT_")
+                        )
+                        reveal_cards = [
+                            itos[tokens[position]]
+                            for position in range(index + 2, index + 2 + reveal_count)
+                        ]
+                    except (IndexError, ValueError):
+                        continue
+                    if reveal_count in {1, 3} and all(
+                        card.startswith("CARD_") for card in reveal_cards
+                    ):
+                        visible_board.extend(reveal_cards)
                     continue
-                local = [itos[tokens[position]] for position in range(index, min(end, index + 12))]
-                if len(local) < 7:
-                    report["errors"].append(
-                        f"{split}: truncated decision observation at token {index}"
-                    )
+                if token != "<PLAYER_1_DECISION>":
                     continue
-                if local[1] != "PLAYER_1_HOLE_CARDS" or not all(
-                    token.startswith("CARD_") for token in local[2:4]
-                ):
-                    report["errors"].append(
-                        f"{split}: decision at token {index} lacks local hero cards"
-                    )
-                if local[4] != "CURRENT_BOARD" or not local[5].startswith("COUNT_"):
-                    report["errors"].append(
-                        f"{split}: decision at token {index} lacks local current board"
-                    )
-                    continue
+                valid_observation = True
                 try:
-                    board_count = int(local[5].removeprefix("COUNT_"))
-                except ValueError:
-                    report["errors"].append(
-                        f"{split}: invalid current-board count at token {index + 5}"
-                    )
-                    continue
-                board_end = index + 6 + board_count
-                if board_count not in {0, 3, 4, 5} or board_end >= end:
-                    report["errors"].append(
-                        f"{split}: invalid current-board framing at token {index}"
-                    )
-                    continue
-                if not all(
-                    itos[tokens[position]].startswith("CARD_")
-                    for position in range(index + 6, board_end)
-                ) or itos[tokens[board_end]] != "POT_SIZE_BB":
-                    report["errors"].append(
-                        f"{split}: invalid current-board cards at token {index}"
-                    )
+                    if itos[tokens[index + 1]] != "PLAYER_1_HOLE_CARDS" or not all(
+                        itos[tokens[position]].startswith("CARD_")
+                        for position in (index + 2, index + 3)
+                    ):
+                        valid_observation = False
+                    cursor = index + 4
+                    if visible_board:
+                        if itos[tokens[cursor]] != "CURRENT_BOARD":
+                            valid_observation = False
+                        board_count = int(
+                            itos[tokens[cursor + 1]].removeprefix("COUNT_")
+                        )
+                        repeated_board = [
+                            itos[tokens[position]]
+                            for position in range(cursor + 2, cursor + 2 + board_count)
+                        ]
+                        if (
+                            board_count != len(visible_board)
+                            or board_count not in {3, 4, 5}
+                            or repeated_board != visible_board
+                        ):
+                            valid_observation = False
+                        cursor += 2 + board_count
+                    if (
+                        itos[tokens[cursor]] != "POT_SIZE_BB"
+                        or not itos[tokens[cursor + 1]].startswith("RANGE_")
+                        or itos[tokens[cursor + 2]] != "TO_CALL_BB"
+                        or not itos[tokens[cursor + 3]].startswith("RANGE_")
+                        or not itos[tokens[cursor + 4]].startswith("PLAYER_")
+                    ):
+                        valid_observation = False
+                except (IndexError, ValueError):
+                    valid_observation = False
+                if not valid_observation:
+                    invalid_decision_observations += 1
             if not decision_positions:
                 report["errors"].append(
                     f"{split}: trajectory {number} has no decision marker"
@@ -169,6 +268,16 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
                     f"but {len(example_masked)} supervised targets"
                 )
             masked += len(example_masked)
+        if missing_position_prefixes:
+            report["errors"].append(
+                f"{split}: {missing_position_prefixes} trajectories lack one "
+                "hero-position prefix token"
+            )
+        if invalid_decision_observations:
+            report["errors"].append(
+                f"{split}: {invalid_decision_observations} decision observations "
+                "have invalid cards, board, pot, call, or state framing"
+            )
         report["splits"][split] = {
             "trajectories": len(offsets),
             "tokens": len(tokens),
@@ -176,6 +285,26 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
             "min_sequence": min(lengths, default=0),
             "max_sequence": max(lengths, default=0),
         }
+
+    stats_path = output_dir / "stats.json"
+    if not stats_path.exists():
+        report["errors"].append("stats.json is missing")
+    else:
+        recorded_frequency = json.loads(stats_path.read_text(encoding="utf-8")).get(
+            "token_frequency"
+        )
+        expected_frequency = {
+            token: {
+                "total": token_counts[token],
+                "context": context_token_counts[token],
+                "supervised": supervised_token_counts[token],
+            }
+            for token in itos
+        }
+        if recorded_frequency != expected_frequency:
+            report["errors"].append(
+                "stats.json token frequencies do not match the binary artifacts"
+            )
 
     if selection_path is not None:
         groups: dict[str, set[str]] = {"train": set(), "val": set()}
