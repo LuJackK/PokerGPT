@@ -588,3 +588,33 @@ SHA-256. Regenerated and revalidated production artifacts, then rebuilt the
 portable bundle. The corrected bundle is 997,224 bytes with SHA-256
 `72C6EFE9D8AA69B26F2FD0640874E30A757CF9ACE05334A6E28E26D16822A00B`;
 the earlier draft checksum in this entry is superseded and must not be used.
+
+## 2026-07-22 - Reproducible trainer implementation plan
+
+**Plan.** Added `docs/training_plan.md` as the implementation contract for the
+first supervised baseline. It defines initialization and dataset-identity
+checks, deterministic length-aware batching, mixed precision, decision-weighted
+gradient accumulation, validation, atomic fully resumable checkpoints, logging,
+and staged verification through unit, one-batch overfit, CPU smoke, and CUDA
+smoke tests.
+
+**Provisional first-run settings.** Start with 64 trajectories per microbatch,
+two-step gradient accumulation, AdamW at a peak learning rate of `3e-4`, 400
+warmup steps, cosine decay to `3e-5`, global gradient clipping at 1.0, and 8,000
+optimizer steps. Prefer BF16 and fall back to scaled FP16. These trainer settings
+remain hypotheses until the smoke runs; the v0.8.0 data and model representation
+contract remains unchanged.
+
+**Experiment policy.** Manual hyperparameter changes create new immutable runs.
+Training hyperparameter tuning is kept separate from scientific ablations.
+Ablation claims will change one component at a time, preserve the split and
+training budget, and use paired multi-seed comparisons on shared downstream
+metrics.
+
+**Held-out test addition.** Before the full baseline, revise the derived split to
+target approximately 85% train, 10% validation, and 5% final test by source hand,
+while keeping Pluribus session folders indivisible. Produce a new versioned
+artifact revision rather than overwriting v0.8.0. Training-derived range
+representatives remain train-only; validation selects checkpoints and
+hyperparameters; the test set remains untouched until the candidate and
+evaluation procedure are frozen.
