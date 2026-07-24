@@ -2,10 +2,17 @@
 
 ## Purpose and scope
 
-The first trainer will produce a reproducible, fully resumable supervised
-baseline using the version 0.8.0 Pluribus representation. It will train the existing
-decoder-only Transformer to predict the single hero-decision token at every
-`<PLAYER_1_DECISION>` point in a complete player-perspective trajectory.
+The first trainer produces a reproducible, fully resumable supervised baseline
+using the version 0.8.1 three-way artifact release of the v0.8.0 Pluribus
+representation. It trains the existing decoder-only Transformer to predict the
+single hero-decision token at every `<PLAYER_1_DECISION>` point in a complete
+player-perspective trajectory.
+
+Implementation status as of 2026-07-23: all 31 tests, the one-batch overfit gate,
+CPU checkpoint/resume smoke, production-model CUDA checkpoint/resume smoke, and
+the 8,000-step seed-1337 baseline have completed. Validation selected the
+step-7,750 checkpoint. The final test split remains untouched until the
+replay-aware evaluation procedure is frozen.
 
 The baseline is imitation learning. It does not add self-play, reinforcement
 learning, a value head, legal-action masking, a hierarchical action/size head,
@@ -17,7 +24,7 @@ is working and measured.
 The following choices belong to the first baseline and should not be tuned
 inside a run:
 
-- Representation: pipeline version `0.8.0`, format
+- Representation: pipeline version `0.8.1`, format
   `pluribus_6max_100bb_spr_position_single_decision_v5`.
 - Dataset release: create a new versioned three-way artifact revision before the
   full baseline, expected to be `v0.8.1` unless another schema change is bundled.

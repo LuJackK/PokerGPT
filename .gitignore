@@ -3,11 +3,13 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .coverage
+.venv/
 
 # Generated test and production artifacts
 test/artifacts/
 data/processed/
 output/
+runs/
 *.bin
 *.pkl
 

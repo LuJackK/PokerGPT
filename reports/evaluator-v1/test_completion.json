@@ -1,0 +1,15 @@
+{
+  "format_version": 1,
+  "freeze_manifest_sha256": "aacdbdb1afb9afc570fe96bae1bf2f3bddae99256db6ae8a7c68f90f2b7c3684",
+  "json_report": {
+    "bytes": 13646,
+    "path": "C:/Users/admactual/PokerGPT/reports/evaluator-v1/final_test_report.json",
+    "sha256": "8833fd3edffe69501242baadbb13044d85d61ed9c9fccdf6a162ca5a184200b0"
+  },
+  "markdown_report": {
+    "bytes": 1288,
+    "path": "C:/Users/admactual/PokerGPT/reports/evaluator-v1/final_test_report.md",
+    "sha256": "2ab66489e347018e6348c62e1388b7f8b7b8abdd1e0a9abfdf9caa1ddd683897"
+  },
+  "status": "test_evaluation_complete"
+}

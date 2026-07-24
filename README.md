@@ -71,3 +71,57 @@ implementation.
 
 Install the model/notebook dependencies with `pip install -r requirements-model.txt`,
 then open `notebooks/01_model_architecture.ipynb`.
+
+## Training
+
+The trainer requires version 0.8.1 artifacts with isolated train, validation,
+and test splits. Normal training commands open and fingerprint only train and
+validation; direct test-dataset construction is sealed behind the final
+evaluation permit. Run the focused trainer verification first:
+
+```powershell
+python -m unittest test.test_sampler test.test_checkpoint test.test_trainer -v
+```
+
+After placing the v0.8.1 artifacts under `data/processed/`, run the 20-step CPU
+smoke configuration:
+
+```powershell
+python train_poker.py configs/smoke_cpu_v0.8.1.json
+```
+
+Resume from the last optimizer-step boundary with the same immutable
+configuration:
+
+```powershell
+python train_poker.py configs/smoke_cpu_v0.8.1.json --resume runs/smoke-cpu-v081-seed1337/latest.pt
+```
+
+The full CUDA baseline is defined by `configs/baseline_v0.8.1.json`. To perform
+a bounded CUDA smoke without changing its configured 8,000-step schedule, give
+the new run an explicit ID and stop at an absolute optimizer step:
+
+```powershell
+python train_poker.py configs/baseline_v0.8.1.json --run-id cuda-smoke-v081-seed1337 --stop-after-steps 50
+```
+
+Every fresh run writes its resolved configuration, environment, dataset
+fingerprint, metrics, and atomic best/latest checkpoints below `runs/<run_id>/`.
+Configuration overrides use `--set dotted.path=value`, are recorded in the
+resolved configuration, and are rejected during resume.
+
+## Frozen evaluation
+
+The replay-aware evaluator streams selected PHH members without extracting the
+source archive and verifies every replayed trajectory against its prepared
+binary. Its metric definitions are in `docs/evaluation_protocol_v1.md`.
+
+Validation development uses:
+
+```powershell
+python evaluate_poker.py validate --archive C:\path\to\poker-hand-histories.zip
+```
+
+The evaluator was frozen and the step-7,750 candidate was scored exactly once
+on the held-out test split. The immutable reports and one-time access receipt
+are under `reports/evaluator-v1/`. Do not invoke `final-test` again.

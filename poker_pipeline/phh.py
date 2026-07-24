@@ -63,6 +63,9 @@ class Decision:
     pot: Decimal
     to_call: Decimal
     current_bet: Decimal
+    minimum_bet: Decimal
+    minimum_raise_increment: Decimal
+    raise_reopened: bool
     big_blind: Decimal
     starting_stacks: tuple[Decimal, ...]
     hero_stack: Decimal
@@ -109,6 +112,9 @@ class ReplayState:
     board: list[str] = field(default_factory=list)
     street: str = "PREFLOP"
     current_bet: Decimal = Decimal(0)
+    minimum_bet: Decimal = Decimal(0)
+    minimum_raise_increment: Decimal = Decimal(0)
+    acted_since_full_raise: set[int] = field(default_factory=set)
     events: list[HandEvent] = field(default_factory=list)
 
     @property
@@ -121,19 +127,21 @@ class ReplayState:
     def legal_actions(self, actor: int) -> tuple[str, ...]:
         if not self.active[actor] or self.stacks[actor] <= 0:
             return ()
-        owed = self.to_call(actor)
-        legal: list[str] = []
-        if owed > 0:
-            legal.extend(("FOLD", "CALL"))
-            if self.stacks[actor] > owed:
-                legal.append("RAISE")
-        else:
-            legal.append("CHECK")
-            if self.current_bet == 0 and self.stacks[actor] > 0:
-                legal.append("BET")
-            elif self.stacks[actor] > 0:
-                legal.append("RAISE")
-        return tuple(legal)
+        return self.legality_state(actor).legal_actions()
+
+    def legality_state(self, actor: int):
+        from .legality import LegalityState
+
+        return LegalityState(
+            pot=self.pot,
+            to_call=self.to_call(actor),
+            current_bet=self.current_bet,
+            street_contribution=self.street_contrib[actor],
+            remaining_stack=self.stacks[actor],
+            minimum_bet=self.minimum_bet,
+            minimum_raise_increment=self.minimum_raise_increment,
+            raise_reopened=actor not in self.acted_since_full_raise,
+        )
 
 
 def split_cards(value: str) -> tuple[str, ...]:
@@ -237,6 +245,8 @@ def _initial_state(member: str, hand_key: str, hand: dict[str, Any]) -> ReplaySt
         active=[True] * count,
         events=events,
         current_bet=max(street_contrib, default=0.0),
+        minimum_bet=min_bet,
+        minimum_raise_increment=max(min_bet, max(street_contrib, default=Decimal(0))),
     )
 
 
@@ -272,6 +282,9 @@ def _decision(
         pot=pot_before,
         to_call=owed,
         current_bet=state.current_bet,
+        minimum_bet=state.minimum_bet,
+        minimum_raise_increment=state.minimum_raise_increment,
+        raise_reopened=actor not in state.acted_since_full_raise,
         big_blind=state.big_blind,
         starting_stacks=state.starting_stacks,
         hero_stack=state.stacks[actor],
@@ -312,6 +325,8 @@ def replay_hand(member: str, hand_key: str, hand: dict[str, Any]) -> Iterator[De
             state.street = {3: "FLOP", 4: "TURN", 5: "RIVER"}.get(len(state.board), state.street)
             state.street_contrib = [Decimal(0)] * state.player_count
             state.current_bet = Decimal(0)
+            state.minimum_raise_increment = state.minimum_bet
+            state.acted_since_full_raise.clear()
             continue
         player_action = PLAYER_ACTION.fullmatch(action)
         if player_action:
@@ -341,10 +356,20 @@ def replay_hand(member: str, hand_key: str, hand: dict[str, Any]) -> Iterator[De
                 raise HandParseError(
                     f"Observed target {target} not legal {decision.legal_actions}: {action}"
                 )
+            contribution = decision.target_amount
+            legality = state.legality_state(actor).check_action(
+                target,
+                contribution if target in {"BET", "RAISE"} else None,
+            )
+            if not legality.legal:
+                raise HandParseError(
+                    f"Observed action is illegal ({legality.reason}): {action}"
+                )
             yield decision
 
             pot_before = state.pot
             contribution = Decimal(0)
+            previous_bet = state.current_bet
             if target == "FOLD":
                 state.active[actor] = False
             elif target == "CALL":
@@ -357,6 +382,12 @@ def replay_hand(member: str, hand_key: str, hand: dict[str, Any]) -> Iterator[De
             state.street_contrib[actor] += contribution
             state.total_contrib[actor] += contribution
             state.current_bet = max(state.current_bet, state.street_contrib[actor])
+            state.acted_since_full_raise.add(actor)
+            if target in {"BET", "RAISE"}:
+                raise_increment = state.current_bet - previous_bet
+                if raise_increment >= state.minimum_raise_increment:
+                    state.minimum_raise_increment = raise_increment
+                    state.acted_since_full_raise = {actor}
             state.events.append(
                 HistoryAction(
                     player=actor,

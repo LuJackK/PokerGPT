@@ -1,0 +1,401 @@
+{
+  "archive": {
+    "bytes": 20289230983,
+    "mode": "streamed selected members only; never extracted",
+    "path": "C:/Users/admactual/Downloads/poker-hand-histories.zip"
+  },
+  "candidate": {
+    "artifact_bundle_sha256": "07588049ad6f1f89ac34aff424b10dc72bb93baf2bd53854c76e4be9eaa31bd4",
+    "checkpoint_sha256": "1d5f7c7d47b9ecfdb67a85be36abef8a0f3013c96d037818083b34c0e76e17ef",
+    "configuration_sha256": "676d83bbed9790a8e7da0f3a5ef2b7c27f0fa4dba6fb48fc19b8b46da80616f2",
+    "dataset_fingerprint": "521316d3f395e4ef078cbb8c1eb3214b898ea5721183ff7b301ef088f0ff0109",
+    "optimizer_step": 7750,
+    "run_id": "baseline-v081-seed1337",
+    "seed": 1337
+  },
+  "checkpoint": {
+    "bytes": 129484726,
+    "path": "C:/Users/admactual/PokerGPT/runs/baseline-v081-seed1337/best.pt",
+    "sha256": "1d5f7c7d47b9ecfdb67a85be36abef8a0f3013c96d037818083b34c0e76e17ef"
+  },
+  "complete_split": true,
+  "created_utc": "2026-07-23T15:29:25.082482+00:00",
+  "dataset_files": {
+    "meta.pkl": {
+      "bytes": 4254,
+      "path": "C:/Users/admactual/PokerGPT/data/processed/meta.pkl",
+      "sha256": "da96d770cd87869f606d423043dfd9278fed29d0644fa470f6c5faa451931d96"
+    },
+    "val.bin": {
+      "bytes": 621752,
+      "path": "C:/Users/admactual/PokerGPT/data/processed/val.bin",
+      "sha256": "d9aecf312cb857515259b8703d24b5014506b35ce09cd999b75fbe79ed679abc"
+    },
+    "val.idx": {
+      "bytes": 47072,
+      "path": "C:/Users/admactual/PokerGPT/data/processed/val.idx",
+      "sha256": "f58f7a9072bb6769a27d0512d5f1e47e84ac5ab270791c3c0d4413634db4e426"
+    },
+    "val_loss_mask.bin": {
+      "bytes": 310876,
+      "path": "C:/Users/admactual/PokerGPT/data/processed/val_loss_mask.bin",
+      "sha256": "df05a7a5698b7f1dee392b54f9b94c41c6db938c38e1ae4f10a338ac51537819"
+    }
+  },
+  "environment": {
+    "device": "cuda",
+    "gpu": "NVIDIA RTX A4000",
+    "precision": "bf16",
+    "python": "3.12.13",
+    "pytorch": "2.6.0+cu124"
+  },
+  "evaluator_configuration_sha256": "3d02e50395d04b6d65ef2eccab79685c7cd10fd68110a5d30957306287ba71ec",
+  "evaluator_id": "pokergpt-replay-evaluator-v1",
+  "metric_definitions": {
+    "illegal_move": "raw argmax token is not executable without clamping, including minimum-size, all-in under-raise, and action-reopening semantics",
+    "joint_decision_token": "argmax/top-k after softmax over the fixed decision-token vocabulary",
+    "mapped_action": "the same raw token mapped to FOLD/CHECK/CALL/BET/RAISE from exact replay state; top-k sums token probabilities by mapped action",
+    "sizing_range_error_conditional": "non-exact decision token only where the raw prediction maps to the correct aggressive five-way action",
+    "sizing_range_error_overall": "non-exact decision token among every ground-truth aggressive decision; non-aggressive predictions count as errors"
+  },
+  "metrics": {
+    "action_confusion_matrix": {
+      "BET": {
+        "BET": 62,
+        "CALL": 0,
+        "CHECK": 651,
+        "FOLD": 0,
+        "RAISE": 0
+      },
+      "CALL": {
+        "BET": 0,
+        "CALL": 222,
+        "CHECK": 0,
+        "FOLD": 700,
+        "RAISE": 57
+      },
+      "CHECK": {
+        "BET": 42,
+        "CALL": 0,
+        "CHECK": 1454,
+        "FOLD": 8,
+        "RAISE": 21
+      },
+      "FOLD": {
+        "BET": 0,
+        "CALL": 67,
+        "CHECK": 0,
+        "FOLD": 4713,
+        "RAISE": 44
+      },
+      "RAISE": {
+        "BET": 0,
+        "CALL": 41,
+        "CHECK": 5,
+        "FOLD": 446,
+        "RAISE": 647
+      }
+    },
+    "decision_cross_entropy": 0.6781530822241081,
+    "decision_token_confusion_matrix": {
+      "ACTION_ALL_IN": {
+        "ACTION_ALL_IN": 9,
+        "ACTION_FOLD": 6,
+        "ACTION_PASSIVE": 17,
+        "RANGE_0.25_TO_0.5": 0,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 0,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 0,
+        "RANGE_2_TO_3": 0,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "ACTION_FOLD": {
+        "ACTION_ALL_IN": 3,
+        "ACTION_FOLD": 4713,
+        "ACTION_PASSIVE": 67,
+        "RANGE_0.25_TO_0.5": 0,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 7,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 32,
+        "RANGE_2_TO_3": 2,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "ACTION_PASSIVE": {
+        "ACTION_ALL_IN": 12,
+        "ACTION_FOLD": 708,
+        "ACTION_PASSIVE": 1676,
+        "RANGE_0.25_TO_0.5": 36,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 26,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 21,
+        "RANGE_2_TO_3": 25,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "RANGE_0.25_TO_0.5": {
+        "ACTION_ALL_IN": 2,
+        "ACTION_FOLD": 0,
+        "ACTION_PASSIVE": 278,
+        "RANGE_0.25_TO_0.5": 36,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 0,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 0,
+        "RANGE_2_TO_3": 0,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "RANGE_0.5_TO_0.75": {
+        "ACTION_ALL_IN": 0,
+        "ACTION_FOLD": 2,
+        "ACTION_PASSIVE": 186,
+        "RANGE_0.25_TO_0.5": 9,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 0,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 0,
+        "RANGE_2_TO_3": 0,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "RANGE_0.75_TO_1": {
+        "ACTION_ALL_IN": 1,
+        "ACTION_FOLD": 17,
+        "ACTION_PASSIVE": 92,
+        "RANGE_0.25_TO_0.5": 2,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 3,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 3,
+        "RANGE_2_TO_3": 0,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "RANGE_0_TO_0.25": {
+        "ACTION_ALL_IN": 1,
+        "ACTION_FOLD": 0,
+        "ACTION_PASSIVE": 38,
+        "RANGE_0.25_TO_0.5": 6,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 0,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 0,
+        "RANGE_2_TO_3": 0,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "RANGE_1.5_TO_2": {
+        "ACTION_ALL_IN": 0,
+        "ACTION_FOLD": 142,
+        "ACTION_PASSIVE": 30,
+        "RANGE_0.25_TO_0.5": 0,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 87,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 94,
+        "RANGE_2_TO_3": 13,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "RANGE_10_TO_20": {
+        "ACTION_ALL_IN": 0,
+        "ACTION_FOLD": 0,
+        "ACTION_PASSIVE": 0,
+        "RANGE_0.25_TO_0.5": 0,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 0,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 0,
+        "RANGE_2_TO_3": 0,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "RANGE_1_TO_1.5": {
+        "ACTION_ALL_IN": 0,
+        "ACTION_FOLD": 235,
+        "ACTION_PASSIVE": 40,
+        "RANGE_0.25_TO_0.5": 0,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 23,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 355,
+        "RANGE_2_TO_3": 0,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "RANGE_2_TO_3": {
+        "ACTION_ALL_IN": 0,
+        "ACTION_FOLD": 37,
+        "ACTION_PASSIVE": 15,
+        "RANGE_0.25_TO_0.5": 0,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 8,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 0,
+        "RANGE_2_TO_3": 49,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "RANGE_3_TO_5": {
+        "ACTION_ALL_IN": 0,
+        "ACTION_FOLD": 7,
+        "ACTION_PASSIVE": 1,
+        "RANGE_0.25_TO_0.5": 0,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 0,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 0,
+        "RANGE_2_TO_3": 8,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      },
+      "RANGE_5_TO_10": {
+        "ACTION_ALL_IN": 0,
+        "ACTION_FOLD": 0,
+        "ACTION_PASSIVE": 0,
+        "RANGE_0.25_TO_0.5": 0,
+        "RANGE_0.5_TO_0.75": 0,
+        "RANGE_0.75_TO_1": 0,
+        "RANGE_0_TO_0.25": 0,
+        "RANGE_1.5_TO_2": 0,
+        "RANGE_10_TO_20": 0,
+        "RANGE_1_TO_1.5": 0,
+        "RANGE_2_TO_3": 0,
+        "RANGE_3_TO_5": 0,
+        "RANGE_5_TO_10": 0
+      }
+    },
+    "decision_top_k": 3,
+    "decisions": 9180,
+    "illegal_move_breakdown": {
+      "by_predicted_token": {
+        "ACTION_FOLD": 8
+      },
+      "by_reason": {
+        "FOLD is unavailable": 8
+      }
+    },
+    "illegal_move_rate": 0.0008714596949891067,
+    "illegal_moves": 8,
+    "joint_decision_token_accuracy": 0.7543572984749455,
+    "joint_decision_token_top_k_accuracy": 0.9667755991285403,
+    "mapped_action_accuracy": 0.773202614379085,
+    "mapped_action_top_k": 2,
+    "mapped_action_top_k_accuracy": 0.974400871459695,
+    "per_street": {
+      "FLOP": {
+        "decisions": 1403,
+        "illegal_move_rate": 0.0,
+        "illegal_moves": 0,
+        "joint_decision_token_accuracy": 0.6578759800427655,
+        "joint_decision_token_top_k_accuracy": 0.9565217391304348,
+        "mapped_action_accuracy": 0.6707056307911617,
+        "mapped_action_top_k_accuracy": 0.9807555238774056,
+        "sizing": {
+          "aggressive_action_correct_decisions": 54,
+          "ground_truth_aggressive_decisions": 330,
+          "range_error_rate_conditional_on_aggressive_action_correct": 0.3333333333333333,
+          "range_error_rate_overall": 0.8909090909090909,
+          "range_interval_distance_mae_conditional_on_aggressive_action_correct": 0.06844714083441313,
+          "representative_ratio_mae_conditional_on_aggressive_action_correct": 0.17442655433444648
+        }
+      },
+      "PREFLOP": {
+        "decisions": 6161,
+        "illegal_move_rate": 0.0,
+        "illegal_moves": 0,
+        "joint_decision_token_accuracy": 0.8170751501379646,
+        "joint_decision_token_top_k_accuracy": 0.9868527836390196,
+        "mapped_action_accuracy": 0.8417464697289401,
+        "mapped_action_top_k_accuracy": 0.9722447654601526,
+        "sizing": {
+          "aggressive_action_correct_decisions": 646,
+          "ground_truth_aggressive_decisions": 1084,
+          "range_error_rate_conditional_on_aggressive_action_correct": 0.23529411764705882,
+          "range_error_rate_overall": 0.544280442804428,
+          "range_interval_distance_mae_conditional_on_aggressive_action_correct": 0.045715164773475835,
+          "representative_ratio_mae_conditional_on_aggressive_action_correct": 0.1389373720338203
+        }
+      },
+      "RIVER": {
+        "decisions": 685,
+        "illegal_move_rate": 0.01167883211678832,
+        "illegal_moves": 8,
+        "joint_decision_token_accuracy": 0.5503649635036496,
+        "joint_decision_token_top_k_accuracy": 0.8715328467153285,
+        "mapped_action_accuracy": 0.5532846715328467,
+        "mapped_action_top_k_accuracy": 0.9547445255474453,
+        "sizing": {
+          "aggressive_action_correct_decisions": 7,
+          "ground_truth_aggressive_decisions": 211,
+          "range_error_rate_conditional_on_aggressive_action_correct": 0.2857142857142857,
+          "range_error_rate_overall": 0.976303317535545,
+          "range_interval_distance_mae_conditional_on_aggressive_action_correct": 0.19941172229832024,
+          "representative_ratio_mae_conditional_on_aggressive_action_correct": 0.19941172229832024
+        }
+      },
+      "TURN": {
+        "decisions": 931,
+        "illegal_move_rate": 0.0,
+        "illegal_moves": 0,
+        "joint_decision_token_accuracy": 0.6348012889366272,
+        "joint_decision_token_top_k_accuracy": 0.9194414607948442,
+        "mapped_action_accuracy": 0.635875402792696,
+        "mapped_action_top_k_accuracy": 0.9935553168635876,
+        "sizing": {
+          "aggressive_action_correct_decisions": 2,
+          "ground_truth_aggressive_decisions": 227,
+          "range_error_rate_conditional_on_aggressive_action_correct": 0.5,
+          "range_error_rate_overall": 0.9955947136563876,
+          "range_interval_distance_mae_conditional_on_aggressive_action_correct": 0.29310344827586204,
+          "representative_ratio_mae_conditional_on_aggressive_action_correct": 0.29310344827586204
+        }
+      }
+    },
+    "sizing": {
+      "aggressive_action_correct_decisions": 709,
+      "ground_truth_aggressive_decisions": 1852,
+      "range_error_rate_conditional_on_aggressive_action_correct": 0.24400564174894218,
+      "range_error_rate_overall": 0.7105831533477321,
+      "range_interval_distance_mae_conditional_on_aggressive_action_correct": 0.049661820876394445,
+      "representative_ratio_mae_conditional_on_aggressive_action_correct": 0.14267230637594921
+    }
+  },
+  "prediction_policy": "decision_token_argmax",
+  "report_format_version": 1,
+  "selection": {
+    "bytes": 5021383,
+    "path": "C:/Users/admactual/PokerGPT/data/selected_nt_6max_v0.8.1.jsonl",
+    "sha256": "e025d471aaa1c1ddea741dd9b6ee0b9dc92ef0bac52683b8e9b1aad7b445e797"
+  },
+  "split": "val"
+}

@@ -6,13 +6,12 @@ PokerGPT is a nanoGPT-style decoder-only Transformer experiment for predicting a
 Texas Hold'em player's next action and, for bets and raises, a sizing range. The
 model learns from complete causal hand trajectories as observed by one player.
 
-The streaming preprocessing pipeline, trajectory-aware loader, and initial model
-architecture are implemented. The current data representation and tokenizer are
-functional but remain provisional while the project prepares its first
-reproducible training baselines on the Pluribus corpus. Active work includes
-finalizing tokenization, regenerating artifacts after schema changes, building
-the training loop and checkpointing, experiment logging, and the evaluation
-engine.
+The streaming preprocessing pipeline, trajectory-aware loader, model,
+reproducible trainer, checkpointing, and core metric logging are implemented.
+The first Pluribus baseline completed on the target RTX A4000. The current data
+representation and tokenizer remain provisional while active work shifts to the
+evaluation engine, frozen held-out-test reporting, and subsequent replicated
+baselines or ablations.
 
 ## Non-negotiable data-safety rules
 
@@ -41,7 +40,7 @@ Selection is manifest-first:
 
 1. `build_manifest.py` streams bounded headers into JSONL.
 2. `select_dataset.py` deterministically selects Pluribus NT six-max hands and
-   groups train/validation splits by session folder.
+   groups train/validation/test splits by session folder.
 3. `prepare_poker.py` streams only selected members into complete trajectories.
 4. `validate_artifacts.py` checks framing, token ranges, multi-target masks,
    context lengths, artifact alignment, and split isolation.
@@ -92,7 +91,7 @@ future schema changes and regenerate all dependent artifacts together.
   no antes, no straddles, and 0.5/1-BB blinds. Chip denominations are arbitrary
   because all amounts are normalized by the big blind.
 
-Pipeline version 0.8.0 has a 105-token vocabulary and format
+Pipeline version 0.8.1 has a 105-token vocabulary and format
 `pluribus_6max_100bb_spr_position_single_decision_v5`. It removes the constant
 table-size pair, fixed blind/ante/straddle tokens, empty-board marker,
 player-state delimiter, unused count tokens, and players 7-10, then adds six
@@ -105,10 +104,12 @@ The vocabulary includes the revised deep-stack ranges through
 Opponent actions remain explicit `ACTION_CHECK`, `ACTION_CALL`, `ACTION_BET`,
 and `ACTION_RAISE` context tokens. Deep ranges from `RANGE_20_TO_50` upward remain
 valid context tokens but are not model outputs because the full corpus contains
-no such supervised target. The production v0.8.0 binaries under `data/processed/`
-are regenerated and validated with their matching `meta.pkl`. A compact versioned
-training bundle is stored at `artifacts/pokergpt-pluribus-v0.8.0.zip`; the raw
-source ZIP is not required on the training machine.
+no such supervised target. The production v0.8.1 binaries under `data/processed/`
+are regenerated and validated with their matching `meta.pkl`. They contain
+50,112 train, 5,884 validation, and 2,946 held-out test trajectories, with zero
+pairwise session overlap. A compact versioned training bundle is stored at
+`artifacts/pokergpt-pluribus-v0.8.1.zip`; the raw source ZIP is not required on
+the training machine. The v0.8.0 two-way bundle remains a legacy artifact.
 
 ## Model and batching status
 
@@ -122,6 +123,27 @@ Training code must preserve complete trajectories. Never random-crop into a hand
 or concatenate separate hands into one attention context. Padding targets and
 padding loss positions must remain ignored.
 
+`poker_model/trainer.py` provides deterministic length-aware batching,
+decision-weighted gradient accumulation, CUDA BF16/FP16 support, validation,
+metric logging, and atomic best/latest/archive checkpoints. Checkpoints restore
+model, optimizer, scheduler, scaler, sampler cursor, counters, configuration,
+dataset identity, and CPU/CUDA RNG state. All 45 tests, the one-batch overfit
+gate, CPU resume smoke, and production-model CUDA resume smoke pass.
+
+The first immutable run is `runs/baseline-v081-seed1337`. It completed 8,000
+optimizer steps with CUDA BF16 and a 64-by-2 trajectory batch. Validation selected
+`best.pt` at step 7,750 with loss 0.679179; `latest.pt` is the completed
+step-8,000 state.
+
+The replay-aware evaluator is frozen as `pokergpt-replay-evaluator-v1`. It
+streams exact PHH state, proves trajectory alignment against the prepared
+binaries, and reports joint token, mapped five-way action, legality, per-street,
+confusion, and sizing metrics. The one-time held-out evaluation of `best.pt`
+completed on all 4,414 test decisions. Joint token accuracy is 0.767331, mapped
+action accuracy is 0.784323, mapped-action top-2 accuracy is 0.974626, and the
+illegal-move rate is 0.000906 (4 moves). The immutable JSON and Markdown reports
+are under `reports/evaluator-v1/`; the access receipt prevents a normal rerun.
+
 ## Target training machine
 
 The intended first-run server is:
@@ -130,25 +152,27 @@ The intended first-run server is:
 - system memory: 32.0 GB (31.6 GB usable);
 - GPU: NVIDIA RTX A4000 with 16 GB VRAM.
 
-Design the trainer for CUDA and mixed precision, preferring BF16 when supported
-and otherwise FP16. Start conservatively around 64 trajectories per device with
-gradient accumulation to an effective batch of 128, then tune from measured
-VRAM use. Keep the code device-portable and retain a CPU/small-model smoke-test
-path.
+The trainer uses CUDA BF16 on this GPU. The 64-trajectory microbatch with
+two-step accumulation completed the first baseline with about 1.64 GiB peak
+PyTorch CUDA allocation, so the effective batch of 128 is the established
+starting point. Keep the code device-portable and retain the CPU/small-model
+smoke-test path.
 
 ## Current priority goals
 
-1. Implement a reproducible trainer with seeded shuffling, length-aware batching,
-   mixed precision, gradient accumulation, clipping, learning-rate scheduling,
-   periodic validation, metric logging, and best/latest checkpoints.
-2. Make checkpoints fully resumable, including model, optimizer, scheduler,
-   precision scaler, step/epoch, configuration, dataset identity, and RNG state.
-3. Pass an overfit-one-batch test and a short smoke run before launching the
-   first full baseline on the RTX A4000 server.
-4. Implement evaluation for action accuracy, top-k accuracy, illegal-move rate,
-   internal street-specific accuracy, action confusion, and amount-range error.
-5. Run the initial single-token joint action-and-sizing baseline. A hierarchical
-   action/size head is a later ablation, not a baseline requirement.
+1. Preserve the frozen evaluator, access receipt, candidate identity, and final
+   test report without rerunning or revising them.
+2. Replicate the unchanged baseline with seed 2027, followed by seed 4099,
+   before making multi-seed claims.
+3. Confirm whether the held-out postflop action weakness and strong conditional
+   sizing behavior replicate across seeds before choosing an action-focused
+   ablation.
+4. Benchmark 128-by-1 batching separately as a throughput-only change; retain
+   64-by-2 for strict baseline replication unless equivalence is established.
+5. Maintain the concise baseline report containing configuration, validation
+   learning curve, throughput, memory, checkpoint identity, and final metrics.
+6. Keep the hierarchical action/size head as a later ablation, not a baseline
+   requirement.
 
 ## Deferred research, not current blockers
 
@@ -159,8 +183,6 @@ path.
   zero-overlap limitation without leaking future information.
 - Post-baseline representation ablations such as alternative stack summaries;
   tokenization changes needed to define the first baseline remain active work.
-- Minimum-raise state, only after full-raise, all-in under-raise, and action-reopen
-  semantics can be represented and tested correctly.
 
 Keep `docs/project_journal.md` append-only as the chronological record of
 decisions and reversals. Keep this file focused on the current operating contract,

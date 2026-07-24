@@ -16,16 +16,22 @@ def main() -> None:
     parser.add_argument("--exclude-source", action="append", default=["annual-computer-poker-competition"])
     parser.add_argument("--max-member-mib", type=float, default=64.0)
     parser.add_argument("--val-fraction", type=float, default=0.1)
-    parser.add_argument("--seed", default="pokergpt-v1")
+    parser.add_argument("--test-fraction", type=float, default=0.05)
+    parser.add_argument("--seed", default="pokergpt-v081-split")
     args = parser.parse_args()
     if not 0 <= args.val_fraction < 1:
         parser.error("--val-fraction must be in [0, 1)")
+    if not 0 <= args.test_fraction < 1:
+        parser.error("--test-fraction must be in [0, 1)")
+    if args.val_fraction + args.test_fraction >= 1:
+        parser.error("--val-fraction and --test-fraction must sum to less than 1")
     options = SelectionOptions(
         player_counts=tuple(args.players),
         included_sources=tuple(args.include_source or ["pluribus"]),
         excluded_sources=tuple(dict.fromkeys(args.exclude_source)),
         max_member_bytes=int(args.max_member_mib * 1024 * 1024),
         validation_fraction=args.val_fraction,
+        test_fraction=args.test_fraction,
         split_seed=args.seed,
     )
     print(json.dumps(select_dataset(args.manifest, args.output, options), indent=2, sort_keys=True))

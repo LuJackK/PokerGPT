@@ -54,6 +54,7 @@ class PipelineTests(unittest.TestCase):
         with zipfile.ZipFile(self.archive, "w", zipfile.ZIP_DEFLATED) as target:
             target.writestr("data/pluribus/session-a/47.phh", HAND_1)
             target.writestr("data/pluribus/session-b/48.phh", HAND_2)
+            target.writestr("data/pluribus/session-c/49.phh", HAND_1)
             target.writestr("data/acpc/fixed.phh", HAND_1.replace("'NT'", "'FT'"))
 
     def tearDown(self) -> None:
@@ -62,7 +63,7 @@ class PipelineTests(unittest.TestCase):
     def test_manifest_and_selection(self) -> None:
         manifest = self.root / "manifest.jsonl"
         summary = build_manifest(self.archive, manifest, ManifestOptions(header_bytes=4096))
-        self.assertEqual(summary["rows_added"], 3)
+        self.assertEqual(summary["rows_added"], 4)
         rows = list(read_jsonl(manifest))
         self.assertEqual(rows[0]["variant"], "NT")
         self.assertEqual(rows[0]["player_count"], 6)
@@ -70,13 +71,17 @@ class PipelineTests(unittest.TestCase):
         selected_summary = select_dataset(
             manifest,
             selection,
-            SelectionOptions(validation_fraction=0.5, split_seed="fixture"),
+            SelectionOptions(
+                validation_fraction=1 / 3,
+                test_fraction=1 / 3,
+                split_seed="fixture",
+            ),
         )
-        self.assertEqual(selected_summary["selected_rows"], 2)
+        self.assertEqual(selected_summary["selected_rows"], 3)
         selected = list(read_jsonl(selection))
         self.assertTrue(all(row["source_folder"] == "pluribus" for row in selected))
         self.assertEqual(selected[0]["split_group"], "data/pluribus/session-a")
-        self.assertEqual({row["split"] for row in selected}, {"train", "val"})
+        self.assertEqual({row["split"] for row in selected}, {"train", "val", "test"})
 
     def test_manifest_resume_repairs_partial_and_duplicate_rows(self) -> None:
         manifest = self.root / "manifest.jsonl"
@@ -89,9 +94,9 @@ class PipelineTests(unittest.TestCase):
             self.archive, manifest, ManifestOptions(header_bytes=4096), resume=True
         )
         rows = list(read_jsonl(manifest))
-        self.assertEqual(len(rows), 3)
-        self.assertEqual(len({row["member"] for row in rows}), 3)
-        self.assertEqual(summary["rows_preexisting"], 3)
+        self.assertEqual(len(rows), 4)
+        self.assertEqual(len({row["member"] for row in rows}), 4)
+        self.assertEqual(summary["rows_preexisting"], 4)
 
     def test_replay_disambiguates_and_normalizes_exactly(self) -> None:
         hand = parse_document(HAND_1, "phh")[0][1]
@@ -316,6 +321,12 @@ class PipelineTests(unittest.TestCase):
                 "split": "val",
                 "selected_player_counts": [6],
             },
+            {
+                "member": "data/pluribus/session-c/49.phh",
+                "source_folder": "pluribus",
+                "split": "test",
+                "selected_player_counts": [6],
+            },
         ]
         selection.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
         output = self.root / "processed"
@@ -327,7 +338,7 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertGreater(stats["writer_trajectories"]["train"], 0)
         self.assertGreater(stats["writer_trajectories"]["val"], 0)
-        for split in ("train", "val"):
+        for split in ("train", "val", "test"):
             token_bytes = (output / f"{split}.bin").read_bytes()
             masks = (output / f"{split}_loss_mask.bin").read_bytes()
             indexes = (output / f"{split}.idx").read_bytes()
@@ -338,7 +349,7 @@ class PipelineTests(unittest.TestCase):
         with (output / "meta.pkl").open("rb") as handle:
             meta = pickle.load(handle)
         self.assertEqual(meta["token_dtype"], "uint16_le")
-        self.assertEqual(meta["version"], "0.8.0")
+        self.assertEqual(meta["version"], "0.8.1")
         self.assertEqual(
             meta["format"],
             "pluribus_6max_100bb_spr_position_single_decision_v5",
@@ -370,6 +381,10 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(output_stats["token_frequency"]["<PAD>"]["total"], 0)
         validation = validate_artifacts(output, selection)
         self.assertTrue(validation["valid"], validation["errors"])
+        self.assertEqual(
+            validation["split_group_overlap"],
+            {"train-val": 0, "train-test": 0, "val-test": 0},
+        )
 
     def test_preparation_rejects_selection_outside_fixed_baseline_contract(self) -> None:
         selection = self.root / "selected-invalid.jsonl"

@@ -188,6 +188,7 @@ class GPT(nn.Module):
         weight_decay: float,
         learning_rate: float,
         betas: tuple[float, float] = (0.9, 0.95),
+        eps: float = 1e-8,
         device_type: str = "cpu",
     ) -> torch.optim.AdamW:
         parameters = [parameter for parameter in self.parameters() if parameter.requires_grad]
@@ -197,7 +198,9 @@ class GPT(nn.Module):
         ]
         fused_available = "fused" in inspect.signature(torch.optim.AdamW).parameters
         fused = fused_available and device_type == "cuda"
-        return torch.optim.AdamW(groups, lr=learning_rate, betas=betas, fused=fused)
+        return torch.optim.AdamW(
+            groups, lr=learning_rate, betas=betas, eps=eps, fused=fused
+        )
 
     @torch.no_grad()
     def generate(

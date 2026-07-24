@@ -126,7 +126,7 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
     token_counts: Counter[str] = Counter()
     context_token_counts: Counter[str] = Counter()
     supervised_token_counts: Counter[str] = Counter()
-    for split in ("train", "val"):
+    for split in ("train", "val", "test"):
         token_path = output_dir / f"{split}.bin"
         mask_path = output_dir / f"{split}_loss_mask.bin"
         index_path = output_dir / f"{split}.idx"
@@ -307,15 +307,22 @@ def validate_artifacts(output_dir: Path, selection_path: Path | None = None) -> 
             )
 
     if selection_path is not None:
-        groups: dict[str, set[str]] = {"train": set(), "val": set()}
+        groups: dict[str, set[str]] = {"train": set(), "val": set(), "test": set()}
         for row in read_jsonl(selection_path):
             if row.get("split") in groups:
                 groups[row["split"]].add(row.get("split_group", row["member"]))
-        overlap = sorted(groups["train"] & groups["val"])
-        if overlap:
-            report["errors"].append(f"split group leakage: {overlap[:5]}")
+        overlaps: dict[str, list[str]] = {}
+        for left, right in (("train", "val"), ("train", "test"), ("val", "test")):
+            key = f"{left}-{right}"
+            overlaps[key] = sorted(groups[left] & groups[right])
+            if overlaps[key]:
+                report["errors"].append(
+                    f"{key} split group leakage: {overlaps[key][:5]}"
+                )
         report["split_groups"] = {key: len(value) for key, value in groups.items()}
-        report["split_group_overlap"] = len(overlap)
+        report["split_group_overlap"] = {
+            key: len(value) for key, value in overlaps.items()
+        }
     report["valid"] = not report["errors"]
     return report
 

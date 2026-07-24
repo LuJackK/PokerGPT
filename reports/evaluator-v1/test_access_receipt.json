@@ -1,0 +1,8 @@
+{
+  "checkpoint_sha256": "1d5f7c7d47b9ecfdb67a85be36abef8a0f3013c96d037818083b34c0e76e17ef",
+  "created_utc": "2026-07-23T15:30:04.366887+00:00",
+  "format_version": 1,
+  "freeze_manifest_sha256": "aacdbdb1afb9afc570fe96bae1bf2f3bddae99256db6ae8a7c68f90f2b7c3684",
+  "status": "test_access_started",
+  "warning": "This receipt is created before held-out examples are read. Its presence permanently prevents a normal second evaluation attempt."
+}

@@ -1,0 +1,39 @@
+{
+  "format_version": 1,
+  "evaluator_id": "pokergpt-replay-evaluator-v1",
+  "prediction_policy": "decision_token_argmax",
+  "decision_top_k": 3,
+  "mapped_action_top_k": 2,
+  "batch_size": 64,
+  "device": "auto",
+  "precision": "auto",
+  "candidate": {
+    "run_id": "baseline-v081-seed1337",
+    "seed": 1337,
+    "optimizer_step": 7750,
+    "checkpoint_sha256": "1d5f7c7d47b9ecfdb67a85be36abef8a0f3013c96d037818083b34c0e76e17ef",
+    "configuration_sha256": "676d83bbed9790a8e7da0f3a5ef2b7c27f0fa4dba6fb48fc19b8b46da80616f2",
+    "dataset_fingerprint": "521316d3f395e4ef078cbb8c1eb3214b898ea5721183ff7b301ef088f0ff0109",
+    "artifact_bundle_sha256": "07588049ad6f1f89ac34aff424b10dc72bb93baf2bd53854c76e4be9eaa31bd4"
+  },
+  "freeze_files": [
+    "configs/evaluator_v1.json",
+    "evaluate_poker.py",
+    "poker_model/checkpoint.py",
+    "poker_model/data.py",
+    "poker_model/decision.py",
+    "poker_model/evaluation.py",
+    "poker_model/evaluation_access.py",
+    "poker_model/evaluation_freeze.py",
+    "poker_model/evaluator.py",
+    "poker_model/legality.py",
+    "poker_model/model.py",
+    "poker_pipeline/legality.py",
+    "poker_pipeline/phh.py",
+    "poker_pipeline/tokenizer.py",
+    "docs/evaluation_protocol_v1.md",
+    "test/test_evaluation.py",
+    "test/test_evaluator.py",
+    "test/test_legality.py"
+  ]
+}

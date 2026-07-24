@@ -31,6 +31,16 @@ class ModelTests(unittest.TestCase):
         self.assertEqual(tuple(generated.shape), (1, 5))
         self.assertEqual(generated.tolist()[0][:2], [1, 2])
 
+    def test_padding_and_context_only_targets_do_not_affect_loss(self) -> None:
+        idx = torch.tensor([[1, 2, 3, 4], [5, 6, 0, 0]])
+        targets = torch.tensor([[2, 3, 4, 5], [6, 7, -1, -1]])
+        mask = torch.tensor([[0, 1, 0, 0], [0, 1, 0, 0]])
+        logits, loss = self.model(idx, targets, mask)
+        selected_logits = torch.stack((logits[0, 1], logits[1, 1]))
+        selected_targets = torch.tensor([3, 7])
+        expected = torch.nn.functional.cross_entropy(selected_logits, selected_targets)
+        self.assertTrue(torch.allclose(loss, expected))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,7 +17,8 @@ class SelectionOptions:
     excluded_sources: tuple[str, ...] = ("annual-computer-poker-competition",)
     max_member_bytes: int = 64 * 1024 * 1024
     validation_fraction: float = 0.1
-    split_seed: str = "pokergpt-v1"
+    test_fraction: float = 0.05
+    split_seed: str = "pokergpt-v081-split"
 
 
 def rejection_reason(row: dict[str, Any], options: SelectionOptions) -> str | None:
@@ -43,6 +44,12 @@ def rejection_reason(row: dict[str, Any], options: SelectionOptions) -> str | No
 def iter_selected(
     rows: Iterable[dict[str, Any]], options: SelectionOptions
 ) -> Iterator[dict[str, Any]]:
+    if not 0 <= options.validation_fraction < 1:
+        raise ValueError("validation_fraction must be in [0, 1)")
+    if not 0 <= options.test_fraction < 1:
+        raise ValueError("test_fraction must be in [0, 1)")
+    if options.validation_fraction + options.test_fraction >= 1:
+        raise ValueError("validation_fraction and test_fraction must sum to less than 1")
     accepted = [row for row in rows if rejection_reason(row, options) is None]
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in accepted:
@@ -54,47 +61,57 @@ def iter_selected(
         )
         grouped.setdefault(split_group, []).append(row)
 
-    target_validation = len(accepted) * options.validation_fraction
-    desired_group_count = (
-        max(1, round(len(grouped) * options.validation_fraction))
-        if options.validation_fraction > 0 and grouped
-        else 0
+    test_groups = _closest_group_subset(
+        grouped,
+        len(accepted) * options.test_fraction,
+        f"{options.split_seed}:test",
     )
-    randomized_groups = sorted(
-        grouped, key=lambda group: stable_fraction(group, options.split_seed)
+    validation_candidates = {
+        group: rows for group, rows in grouped.items() if group not in test_groups
+    }
+    validation_groups = _closest_group_subset(
+        validation_candidates,
+        len(accepted) * options.validation_fraction,
+        f"{options.split_seed}:val",
     )
-    validation_groups = set(randomized_groups[:desired_group_count])
-    validation_rows = sum(len(grouped[group]) for group in validation_groups)
-    # Preserve an approximately representative number of groups, then make
-    # deterministic one-for-one swaps until no swap improves the row ratio.
-    while validation_groups:
-        current_error = abs(validation_rows - target_validation)
-        best: tuple[float, str, str, int] | None = None
-        for remove in sorted(validation_groups):
-            for add in randomized_groups:
-                if add in validation_groups:
-                    continue
-                candidate_rows = validation_rows - len(grouped[remove]) + len(grouped[add])
-                candidate_error = abs(candidate_rows - target_validation)
-                if candidate_error >= current_error:
-                    continue
-                candidate = (candidate_error, remove, add, candidate_rows)
-                if best is None or candidate < best:
-                    best = candidate
-        if best is None:
-            break
-        _, remove, add, validation_rows = best
-        validation_groups.remove(remove)
-        validation_groups.add(add)
 
     for split_group, group_rows in grouped.items():
+        if split_group in test_groups:
+            split = "test"
+        elif split_group in validation_groups:
+            split = "val"
+        else:
+            split = "train"
         for row in group_rows:
             selected = dict(row)
-            selected["split"] = "val" if split_group in validation_groups else "train"
+            selected["split"] = split
             selected["split_group"] = split_group
             selected["selected_player_counts"] = list(options.player_counts)
-            selected["selection"] = "clean_nt_6max_v1"
+            selected["selection"] = "clean_nt_6max_v2"
             yield selected
+
+
+def _closest_group_subset(
+    grouped: dict[str, list[dict[str, Any]]],
+    target_rows: float,
+    seed: str,
+) -> set[str]:
+    """Choose a deterministic indivisible-group subset nearest a row target."""
+
+    if target_rows <= 0 or not grouped:
+        return set()
+    ordered = sorted(grouped, key=lambda group: stable_fraction(group, seed))
+    paths: dict[int, tuple[str, ...]] = {0: ()}
+    for group in ordered:
+        size = len(grouped[group])
+        additions: dict[int, tuple[str, ...]] = {}
+        for total, selected in tuple(paths.items()):
+            candidate_total = total + size
+            if candidate_total not in paths and candidate_total not in additions:
+                additions[candidate_total] = (*selected, group)
+        paths.update(additions)
+    best_total = min(paths, key=lambda total: (abs(total - target_rows), total))
+    return set(paths[best_total])
 
 
 def select_dataset(
@@ -125,6 +142,7 @@ def select_dataset(
             "excluded_sources": options.excluded_sources,
             "max_member_bytes": options.max_member_bytes,
             "validation_fraction": options.validation_fraction,
+            "test_fraction": options.test_fraction,
             "split_seed": options.split_seed,
         },
     }

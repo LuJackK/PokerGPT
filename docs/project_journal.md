@@ -618,3 +618,227 @@ artifact revision rather than overwriting v0.8.0. Training-derived range
 representatives remain train-only; validation selects checkpoints and
 hyperparameters; the test set remains untouched until the candidate and
 evaluation procedure are frozen.
+
+## 2026-07-22 - Trainer implementation begins with batching and checkpoints
+
+**Deterministic batching foundation.** Extended `PokerTrajectoryDataset` to
+expose the complete shifted length of every trajectory and added a resumable
+length-aware batch sampler. Each epoch uses the permutation seed `seed + epoch`,
+sorts only inside bounded pools, shuffles the resulting batches, and records the
+next batch cursor. The sampler rejects incompatible saved state and retains the
+no-cropping, no-concatenation trajectory contract.
+
+**Checkpoint foundation.** Added streaming SHA-256 identity over `meta.pkl` and
+the token, mask, and index files for train, validation, and test; Python and
+PyTorch CPU/CUDA RNG capture and restoration; atomic same-directory checkpoint
+replacement; a versioned required-key contract; and exact dataset, training,
+and model configuration compatibility checks. Generated run directories are
+now ignored by Git.
+
+**Verification status.** Added focused sampler and checkpoint tests. Static
+compilation succeeds and all data-pipeline tests pass in the local bundled
+runtime. That runtime does not include PyTorch, so the model, sampler, and
+checkpoint tests are present but remain skipped here; they must be executed in
+the PyTorch training environment before this implementation slice is accepted.
+
+## 2026-07-22 - Core trainer and smoke-run path implemented
+
+**Training loop.** Added the configuration-driven trainer and CLI. The trainer
+validates the preprocessing contract, fingerprints all three data splits,
+constructs the held-out test dataset without evaluating it, trains on complete
+trajectories with deterministic length-aware batches, and normalizes accumulated
+gradients by the total number of supervised decisions before clipping. It uses
+AdamW, linear warmup followed by cosine decay, BF16 or scaled FP16 on CUDA, and
+FP32 on CPU.
+
+**Metrics and run records.** Training and validation JSONL records now include
+decision-weighted cross-entropy, exact decision-token accuracy, grouped action
+and top-k accuracy, per-group accuracy and confusion, sizing accuracy, sizing
+ratio error, class counts, gradient norm, learning rate, throughput, elapsed
+time, and peak CUDA memory. Fresh runs write an immutable resolved
+configuration, environment report, dataset fingerprint, and atomic best/latest
+checkpoints. Resume restores model, optimizer, scheduler, scaler, sampler
+cursor, counters, elapsed time, and Python/PyTorch CPU/CUDA RNG state, and
+rejects configuration or dataset mismatches.
+
+**Configurations and verification gates.** Added the locked full baseline
+configuration and a separate 20-step small-model CPU smoke configuration for
+the forthcoming v0.8.1 three-way artifacts. Added tests for decision-weighted
+gradient equivalence, validation weighting, four-step uninterrupted versus
+checkpoint/resume identity, and one-batch overfitting. Static compilation and
+all non-PyTorch tests pass locally. PyTorch execution remains an outstanding
+gate because this desktop runtime has no PyTorch installation; the v0.8.1
+three-way artifacts are also still required before the real-data smoke runs.
+
+**PyTorch artifact-reader compatibility.** The binary files remain little-endian
+`uint16`, but the loader maps their storage through PyTorch's broadly supported
+signed `int16` dtype and then converts slices to `long`. The trainer rejects a
+vocabulary above 32,768, so every valid token has the same bit pattern and value
+under either 16-bit interpretation; this avoids relying on limited eager-mode
+support for unsigned 16-bit tensors.
+
+## 2026-07-23 - Three-way artifacts and first RTX baseline complete
+
+**Training environment and verification gates.** Created the workspace-local
+`.venv` with PyTorch 2.6.0 CUDA 12.4 support and confirmed CUDA BF16 on the
+NVIDIA RTX A4000. All 31 tests pass. The fixed one-batch test reached loss
+0.000055 and exact decision accuracy 1.0. The 20-step small-model CPU smoke
+completed across an intentional checkpoint resume, with validation loss falling
+from 3.991997 at step 5 to 3.411342 at step 20.
+
+The 50-step production-model CUDA smoke used BF16, 64 trajectories per
+microbatch, and two-step gradient accumulation. It completed an intentional
+resume at step 25 and reduced validation loss from 2.980685 to 1.667070. The
+resume gate exposed that loading a checkpoint directly onto CUDA also moved the
+saved CPU RNG tensor to CUDA; checkpoint loading now stages on CPU and RNG
+restoration explicitly normalizes CPU and CUDA state tensors. A CUDA-mapped RNG
+regression test covers the correction.
+
+**Version 0.8.1 three-way release.** Deterministically split all 10,000 selected
+Pluribus NT six-max source hands by indivisible session folder into 8,500 train,
+1,000 validation, and 500 held-out test hands. The resulting 81/7/4 session
+groups have zero pairwise overlap. Streamed the source ZIP without extracting
+it and regenerated 50,112 train, 5,884 validation, and 2,946 test trajectories.
+The splits contain 77,762, 9,180, and 4,414 supervised decisions respectively,
+for unchanged totals of 58,942 trajectories, 3,108,586 tokens, and 91,356
+decisions. Validation passed with zero parse errors and maximum trajectory
+length 255.
+
+Packaged the 15 required training and audit files as
+`artifacts/pokergpt-pluribus-v0.8.1.zip`. The bundle is 938,936 bytes with
+SHA-256
+`07588049AD6F1F89AC34AFF424B10DC72BB93BAF2BD53854C76E4BE9EAA31BD4`.
+The two-way v0.8.0 bundle remains available only as a legacy release.
+
+**First full baseline.** Completed `baseline-v081-seed1337` for 8,000 optimizer
+steps with the locked approximately 10.8-million-parameter model, CUDA BF16,
+64-by-2 batching, and validation-only checkpoint selection. Training processed
+1,024,000 trajectory presentations, 53,053,177 tokens, and 1,588,768 supervised
+decisions in 372.9 seconds of recorded trainer time. Peak PyTorch CUDA allocation
+was 1,762,866,688 bytes.
+
+Validation selected `best.pt` at step 7,750 with loss 0.679179. The completed
+step-8,000 state had validation loss 0.699043, exact decision-token accuracy
+0.751089, grouped action accuracy 0.768301, action top-k accuracy 0.973747,
+aggressive sizing accuracy 0.291209, and representative-ratio MAE 0.083294.
+`latest.pt` records step 8,000 and both checkpoints contain the complete resume
+contract. The held-out test split has not been evaluated; it remains reserved
+until the legality/street-aware evaluation procedure and candidate checkpoint
+identity are frozen.
+
+## 2026-07-23 - Exact legality foundation and baseline identity record
+
+Implemented an exact no-limit betting-legality snapshot for evaluator use. It
+maps passive predictions to check or call from exact state, distinguishes bet
+from raise, permits folds only when facing a wager, enforces minimum bets and
+full-raise increments, permits undersized aggression only when it is an all-in,
+and tracks whether a short all-in reopens action for each player. RANGE token
+bounds and executable representatives use exact `Decimal` pot-to-chip
+conversion. The evaluator accumulator now reports a combined raw illegal-move
+rate alongside action-only and aggressive-size-only diagnostics.
+
+Added synthetic cases for check/call mapping, bet versus raise, fold
+availability, aggressive all-ins, minimum raises, short all-in under-raises,
+action reopening, and range-bound inclusivity. The full suite now contains 42
+passing tests. No held-out test examples were scored or decoded during this
+work.
+
+Added write-once candidate identity records and canonical configuration
+hashing. The synced step-7,750 `best.pt` record confirms seed 1337, validation
+loss 0.6791787324647758, dataset fingerprint
+`521316d3f395e4ef078cbb8c1eb3214b898ea5721183ff7b301ef088f0ff0109`,
+configuration hash
+`676d83bbed9790a8e7da0f3a5ef2b7c27f0fa4dba6fb48fc19b8b46da80616f2`,
+bundle hash
+`07588049ad6f1f89ac34aff424b10dc72bb93baf2bd53854c76e4be9eaa31bd4`,
+and checkpoint hash
+`1d5f7c7d47b9ecfdb67a85be36abef8a0f3013c96d037818083b34c0e76e17ef`.
+The original training environment recorded Python 3.12.13, PyTorch 2.6.0
+CUDA 12.4, BF16, and NVIDIA RTX A4000, but did not capture a Git commit or dirty
+state. That provenance gap is preserved explicitly and must not be
+retroactively filled with an assumed commit. Future runs capture the canonical
+configuration hash and expanded CPU/GPU runtime details at initialization.
+
+## 2026-07-23 - Evaluator frozen and held-out test scored once
+
+Completed `pokergpt-replay-evaluator-v1`. Normal dataset construction now
+refuses the test split and training opens only train and validation. Evaluation
+streams exact selected PHH members, checks ZIP CRC and sizes, re-tokenizes each
+trajectory, and requires byte-exact alignment with the prepared binary before
+using its replay state. The 45-test suite covers the split gate, one-time
+receipt, four-street end-to-end replay, freeze verification, and tamper
+rejection in addition to the detailed legality cases.
+
+The complete 9,180-decision validation pass produced joint token accuracy
+0.754357, mapped action accuracy 0.773203, mapped action top-2 accuracy 0.974401,
+and illegal-move rate 0.000871. All eight validation illegal predictions were
+folds when no wager was faced. Frozen evaluator manifest SHA-256 is
+`aacdbdb1afb9afc570fe96bae1bf2f3bddae99256db6ae8a7c68f90f2b7c3684`.
+
+After the freeze manifest and all frozen source hashes verified, consumed the
+one-time test access receipt and evaluated step-7,750 `best.pt` on all 4,414
+held-out decisions. Joint token accuracy is 0.767331, token top-3 is 0.968962,
+mapped five-way action accuracy is 0.784323, mapped action top-2 is 0.974626,
+and illegal-move rate is 0.000906 (four moves). Overall sizing-range error is
+0.686343; conditional on choosing the correct aggressive action it is 0.216763,
+with range-interval distance MAE 0.029187 pot. The final JSON report SHA-256 is
+`8833fd3edffe69501242baadbb13044d85d61ed9c9fccdf6a162ca5a184200b0`.
+
+The main held-out weakness is action selection after the flop, especially
+folding instead of calling and checking instead of betting. Conditional sizing
+is substantially healthier, so the hierarchical size head is not the next
+intervention. The next run is the unchanged seed-2027 baseline replication,
+followed by seed 4099 before multi-seed claims. Keep 64-by-2 batching for strict
+comparability; benchmark 128-by-1 separately as a throughput-only candidate.
+
+## 2026-07-23 - Long-running validation shadow trajectories
+
+Added a separate replay-backed diagnostic for observing the frozen candidate
+over realistic long sequences without modifying the evaluator or reopening the
+held-out test split. `analyze_long_trajectories.py` streams the selected
+validation hands, proves byte-exact trajectory alignment, predicts every hero
+decision, and reports complete-trajectory accuracy, decision-depth survival,
+length bands, calibration, action mix, legality, session-order stability, and
+readable traces for the longest hands. Recorded actions advance the exact replay
+state, so this is teacher-forced shadow play rather than counterfactual
+self-play; the model is not supervised to generate boards, pots, or opponent
+actions.
+
+The run covered all 1,000 validation source hands, 5,884 player-perspective
+trajectories, and 9,180 decisions. Its full frozen-metric dictionary exactly
+matched the immutable validation report. Overall token/action accuracy remained
+0.754357/0.773203, but the 687 trajectories with at least four hero decisions
+fell to 0.571705/0.588501, and only 7.13% were fully token-correct. Predicted
+bet-or-raise frequency versus recorded frequency was 6.42%/23.52% on the flop,
+0.32%/24.38% on the turn, and 2.04%/30.80% on the river. The qualitative traces
+show repeated correct checks followed by folds where the recorded player called
+or raised. This strengthens the existing action-selection diagnosis while
+preserving conditional sizing as the healthier component. The report is under
+`reports/long-trajectory-shadow-v1/`; the evaluator freeze manifest still
+verifies, and no test access occurred.
+
+## 2026-07-24 - Novel synthetic trajectory probe
+
+Clarified that the validation shadow session used real unseen hands rather than
+a newly generated trajectory. Added `evaluate_novel_trajectory.py` and authored
+one fixed, legal six-max 100-BB PHH scenario before inspecting its predictions.
+The hijack hero holds As Qs, opens and calls a three-bet in a three-way pot, then
+takes an eight-decision check/call line across a Qh-7d-2c-Tc-3s board. Exact
+replay produced a complete 252-token trajectory, opponent private cards were
+absent from model input, and an exhaustive comparison found no identical
+encoding among all 50,112 training trajectories. Seven of eight complete
+decision prefixes were also absent; the opening prefix had three exact training
+matches. The test split remained sealed.
+
+The frozen seed-1337 model matched three of eight authored tokens/actions, with
+all eight raw outputs legal. It reproduced the 2.25-BB opening bucket as 2.24
+BB, preferred a further raise instead of calling the three-bet, preferred a
+roughly half-pot flop bet instead of checking, then folded in the separate
+teacher-forced state facing the flop bet. It matched the turn check and call
+with high confidence. On the river it preferred a 61-BB all-in over checking
+and, in the alternate authored branch facing a 43-BB bet, narrowly preferred
+folding. These per-state predictions are teacher-forced alternatives, not one
+self-consistent counterfactual branch; continuing a generated branch requires
+an engine and reactive opponent policy. The fixture is below `test/artifacts/`
+and the JSON/Markdown report is under
+`reports/novel-synthetic-trajectory-v1/`.

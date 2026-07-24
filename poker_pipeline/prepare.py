@@ -122,7 +122,9 @@ def prepare_dataset(
             f"first mismatch: {member}"
         )
     tokenizer = PokerTokenizer()
-    writers = {split: SplitWriter(output_dir, split) for split in ("train", "val")}
+    writers = {
+        split: SplitWriter(output_dir, split) for split in ("train", "val", "test")
+    }
     counts: Counter[str] = Counter()
     token_counts: Counter[str] = Counter()
     context_token_counts: Counter[str] = Counter()
@@ -155,6 +157,7 @@ def prepare_dataset(
                 counts["invalid_split"] += 1
                 continue
             trajectories = build_hero_trajectories(decisions)
+            counts[f"split:{split}:hands"] += 1
             acting_players = len({decision.actor for decision in decisions})
             counts["unknown_hero_trajectories_skipped"] += acting_players - len(trajectories)
             for trajectory in trajectories:
@@ -181,6 +184,7 @@ def prepare_dataset(
                 sequence_lengths.append(len(encoded.ids))
                 decisions_per_trajectory.append(trajectory.decision_count)
                 counts[f"split:{split}:trajectories"] += 1
+                counts[f"split:{split}:tokens"] += len(encoded.ids)
                 counts[f"source:{selected.get('source_folder', 'unknown')}:trajectories"] += 1
                 for item in trajectory.items:
                     if not isinstance(item, Decision):
@@ -192,6 +196,7 @@ def prepare_dataset(
                         training_range_ratios[decision_token].append(item.target_amount_pot)
                     counts[f"street:{item.street}"] += 1
                     counts["supervised_decisions"] += 1
+                    counts[f"split:{split}:supervised_decisions"] += 1
                 if len(audit) < options.audit_samples:
                     audit.append(
                         {

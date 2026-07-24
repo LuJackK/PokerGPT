@@ -1,0 +1,134 @@
+{
+  "artifact_bundle": {
+    "bytes": 938936,
+    "path": "C:/Users/admactual/PokerGPT/artifacts/pokergpt-pluribus-v0.8.1.zip",
+    "sha256": "07588049ad6f1f89ac34aff424b10dc72bb93baf2bd53854c76e4be9eaa31bd4"
+  },
+  "candidate": {
+    "artifact_bundle_sha256": "07588049ad6f1f89ac34aff424b10dc72bb93baf2bd53854c76e4be9eaa31bd4",
+    "checkpoint_sha256": "1d5f7c7d47b9ecfdb67a85be36abef8a0f3013c96d037818083b34c0e76e17ef",
+    "configuration_sha256": "676d83bbed9790a8e7da0f3a5ef2b7c27f0fa4dba6fb48fc19b8b46da80616f2",
+    "dataset_fingerprint": "521316d3f395e4ef078cbb8c1eb3214b898ea5721183ff7b301ef088f0ff0109",
+    "optimizer_step": 7750,
+    "run_id": "baseline-v081-seed1337",
+    "seed": 1337
+  },
+  "checkpoint": {
+    "bytes": 129484726,
+    "path": "C:/Users/admactual/PokerGPT/runs/baseline-v081-seed1337/best.pt",
+    "sha256": "1d5f7c7d47b9ecfdb67a85be36abef8a0f3013c96d037818083b34c0e76e17ef"
+  },
+  "created_utc": "2026-07-23T15:29:40.033338+00:00",
+  "evaluator_configuration": {
+    "bytes": 1330,
+    "canonical_sha256": "3d02e50395d04b6d65ef2eccab79685c7cd10fd68110a5d30957306287ba71ec",
+    "path": "C:/Users/admactual/PokerGPT/configs/evaluator_v1.json",
+    "sha256": "bb854b82694a2cb7eb3e0ea2d3215d6b9216e78bd8f012a9ba050ecd7f2760c4"
+  },
+  "evaluator_id": "pokergpt-replay-evaluator-v1",
+  "format_version": 1,
+  "frozen_files": {
+    "configs/evaluator_v1.json": {
+      "bytes": 1330,
+      "path": "C:/Users/admactual/PokerGPT/configs/evaluator_v1.json",
+      "sha256": "bb854b82694a2cb7eb3e0ea2d3215d6b9216e78bd8f012a9ba050ecd7f2760c4"
+    },
+    "docs/evaluation_protocol_v1.md": {
+      "bytes": 3900,
+      "path": "C:/Users/admactual/PokerGPT/docs/evaluation_protocol_v1.md",
+      "sha256": "83a350c216ac29be01e3c65526fa70117d45cde7c0fe3d68e398a8a1121a27c2"
+    },
+    "evaluate_poker.py": {
+      "bytes": 6522,
+      "path": "C:/Users/admactual/PokerGPT/evaluate_poker.py",
+      "sha256": "977d8e8d27de5983900d8a00e5a6f9eece22fdf1a049cf143e2b94036c0f49e1"
+    },
+    "poker_model/checkpoint.py": {
+      "bytes": 5923,
+      "path": "C:/Users/admactual/PokerGPT/poker_model/checkpoint.py",
+      "sha256": "9560248f604aabfc888d4b6674616dfdafdce9fd261cfc8273ffe0ad55e7b9c1"
+    },
+    "poker_model/data.py": {
+      "bytes": 12238,
+      "path": "C:/Users/admactual/PokerGPT/poker_model/data.py",
+      "sha256": "56ccebed13edd724e95836afa90ae48eb35f062ca9681cd120407857096c4a28"
+    },
+    "poker_model/decision.py": {
+      "bytes": 6229,
+      "path": "C:/Users/admactual/PokerGPT/poker_model/decision.py",
+      "sha256": "bc66a6ad31806e93b291e323290b69c7887abcf4f3c31254893c36618fe315c1"
+    },
+    "poker_model/evaluation.py": {
+      "bytes": 18244,
+      "path": "C:/Users/admactual/PokerGPT/poker_model/evaluation.py",
+      "sha256": "4f3257b3d5b64831dc48c374b72c7f5d045381c6b816ebb36eba8748ce5fa465"
+    },
+    "poker_model/evaluation_access.py": {
+      "bytes": 2443,
+      "path": "C:/Users/admactual/PokerGPT/poker_model/evaluation_access.py",
+      "sha256": "07560c2ff87ed7227f9418991bc276d0f7020691e0ceab1e7206c24616a329ce"
+    },
+    "poker_model/evaluation_freeze.py": {
+      "bytes": 4269,
+      "path": "C:/Users/admactual/PokerGPT/poker_model/evaluation_freeze.py",
+      "sha256": "00dc16026341ba7c5586a61a7d904495accd31a6bfd24227e6013c6709cf7f2f"
+    },
+    "poker_model/evaluator.py": {
+      "bytes": 20358,
+      "path": "C:/Users/admactual/PokerGPT/poker_model/evaluator.py",
+      "sha256": "7df20949a074fd52883055510f0a939cd1c524b68c6ba38ac5f9c688203eaf84"
+    },
+    "poker_model/legality.py": {
+      "bytes": 1517,
+      "path": "C:/Users/admactual/PokerGPT/poker_model/legality.py",
+      "sha256": "db65491db8658c7e4f05790f090958a004aec1cbf8b957aa8081dc64bed8d97e"
+    },
+    "poker_model/model.py": {
+      "bytes": 9418,
+      "path": "C:/Users/admactual/PokerGPT/poker_model/model.py",
+      "sha256": "45c2fb5437d251bc470856013d4735dda689a22c82f7310eea8695922a8276cb"
+    },
+    "poker_pipeline/legality.py": {
+      "bytes": 7911,
+      "path": "C:/Users/admactual/PokerGPT/poker_pipeline/legality.py",
+      "sha256": "c5bb37109181b056ce1647af393945eb4f372a7451f9a749d32317d4a1425bf1"
+    },
+    "poker_pipeline/phh.py": {
+      "bytes": 19811,
+      "path": "C:/Users/admactual/PokerGPT/poker_pipeline/phh.py",
+      "sha256": "066e7f9c247e991874c693a2cf3d4a2b9544dcb1cb6a46ca64773d8f75dcdd52"
+    },
+    "poker_pipeline/tokenizer.py": {
+      "bytes": 10840,
+      "path": "C:/Users/admactual/PokerGPT/poker_pipeline/tokenizer.py",
+      "sha256": "0fb81c3110699366db06fc722e4b42f66204c11a4e7e59ef65eadc1a607d35eb"
+    },
+    "test/test_evaluation.py": {
+      "bytes": 3050,
+      "path": "C:/Users/admactual/PokerGPT/test/test_evaluation.py",
+      "sha256": "ddd8fb8534dab225f1fe6c2c1b269cb6410528edaad0523efee24cc1fec2ea2e"
+    },
+    "test/test_evaluator.py": {
+      "bytes": 8067,
+      "path": "C:/Users/admactual/PokerGPT/test/test_evaluator.py",
+      "sha256": "62be7f7fd9d82d96da23db340e1710219ccfc5a5f37a1ec06e2c519f0716457e"
+    },
+    "test/test_legality.py": {
+      "bytes": 5354,
+      "path": "C:/Users/admactual/PokerGPT/test/test_legality.py",
+      "sha256": "76633a55fc2d2fe96c69bc12d950413fe2d78a9d4c857482903fe354db42adb7"
+    }
+  },
+  "run_identity": {
+    "bytes": 2011,
+    "path": "C:/Users/admactual/PokerGPT/runs/baseline-v081-seed1337/run_identity.json",
+    "sha256": "60304a000c2bc44cabb6b1135c12537c3bc1888a69861eab274fd4ce26ffd5ca"
+  },
+  "status": "frozen_before_test",
+  "test_accessed": false,
+  "validation_report": {
+    "bytes": 13666,
+    "path": "C:/Users/admactual/PokerGPT/reports/evaluator-v1/validation_report.json",
+    "sha256": "5241bb0e058734c59d7382cb0211b1c3f4c42a65b96e77b116d959bb9450a8e4"
+  }
+}

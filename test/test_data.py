@@ -27,7 +27,7 @@ class TrajectoryDatasetTests(unittest.TestCase):
         )
         (self.output / "train.idx").write_bytes(struct.pack("<2Q", 0, 4))
         with (self.output / "meta.pkl").open("wb") as handle:
-            pickle.dump({"pad_token_id": 99, "block_size": 8}, handle)
+            pickle.dump({"pad_token_id": 99, "block_size": 8, "vocab_size": 128}, handle)
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -57,11 +57,21 @@ class TrajectoryDatasetTests(unittest.TestCase):
 
     def test_oversized_trajectory_is_rejected_without_truncation(self) -> None:
         with (self.output / "meta.pkl").open("wb") as handle:
-            pickle.dump({"pad_token_id": 99, "block_size": 2}, handle)
+            pickle.dump({"pad_token_id": 99, "block_size": 2, "vocab_size": 128}, handle)
         from poker_model.data import PokerTrajectoryDataset
 
         with self.assertRaisesRegex(ValueError, "exceeding block_size"):
             PokerTrajectoryDataset(self.output, "train")
+
+    def test_test_split_is_sealed_without_final_evaluation_permit(self) -> None:
+        from poker_model.data import PokerTrajectoryDataset
+
+        for suffix in (".bin", "_loss_mask.bin", ".idx"):
+            source = self.output / f"train{suffix}"
+            target = self.output / f"test{suffix}"
+            target.write_bytes(source.read_bytes())
+        with self.assertRaisesRegex(PermissionError, "held-out test split is sealed"):
+            PokerTrajectoryDataset(self.output, "test")
 
 
 if __name__ == "__main__":

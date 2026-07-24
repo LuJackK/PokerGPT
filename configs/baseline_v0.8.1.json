@@ -1,0 +1,62 @@
+{
+  "run_id": "baseline-v081-seed1337",
+  "data_dir": "data/processed",
+  "runs_dir": "runs",
+  "dataset": {
+    "version": "0.8.1",
+    "format": "pluribus_6max_100bb_spr_position_single_decision_v5",
+    "vocab_size": 105,
+    "pad_token_id": 0,
+    "block_size": 320,
+    "decision_tokens": [
+      "ACTION_FOLD",
+      "ACTION_PASSIVE",
+      "RANGE_0_TO_0.25",
+      "RANGE_0.25_TO_0.5",
+      "RANGE_0.5_TO_0.75",
+      "RANGE_0.75_TO_1",
+      "RANGE_1_TO_1.5",
+      "RANGE_1.5_TO_2",
+      "RANGE_2_TO_3",
+      "RANGE_3_TO_5",
+      "RANGE_5_TO_10",
+      "RANGE_10_TO_20",
+      "ACTION_ALL_IN"
+    ],
+    "splits": ["train", "val", "test"]
+  },
+  "model": {
+    "n_layer": 6,
+    "n_head": 6,
+    "n_embd": 384,
+    "dropout": 0.1,
+    "bias": false
+  },
+  "training": {
+    "seed": 1337,
+    "optimizer": "adamw",
+    "schedule": "cosine",
+    "label_smoothing": 0.0,
+    "device": "auto",
+    "precision": "auto",
+    "micro_batch_size": 64,
+    "gradient_accumulation_steps": 2,
+    "loader_workers": 0,
+    "pool_size": 6400,
+    "peak_learning_rate": 0.0003,
+    "minimum_learning_rate": 0.00003,
+    "adam_betas": [0.9, 0.95],
+    "adam_epsilon": 1e-8,
+    "weight_decay": 0.1,
+    "gradient_clip": 1.0,
+    "warmup_steps": 400,
+    "max_steps": 8000,
+    "validation_interval": 250,
+    "checkpoint_interval": 250,
+    "archive_interval": 1000,
+    "log_interval": 10,
+    "deterministic": true,
+    "allow_tf32": false,
+    "compile": false
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "input_rows": 10000,
+  "manifest": "C:\\Users\\admactual\\PokerGPT\\data\\manifest_pluribus.jsonl",
+  "options": {
+    "excluded_sources": [
+      "annual-computer-poker-competition"
+    ],
+    "included_sources": [
+      "pluribus"
+    ],
+    "max_member_bytes": 67108864,
+    "player_counts": [
+      6
+    ],
+    "split_seed": "pokergpt-v081-split",
+    "test_fraction": 0.05,
+    "validation_fraction": 0.1,
+    "variants": [
+      "NT"
+    ]
+  },
+  "output": "C:\\Users\\admactual\\PokerGPT\\data\\selected_nt_6max_v0.8.1.jsonl",
+  "rejected": {},
+  "selected_rows": 10000,
+  "sources": {
+    "pluribus": 10000
+  },
+  "splits": {
+    "test": 500,
+    "train": 8500,
+    "val": 1000
+  }
+}

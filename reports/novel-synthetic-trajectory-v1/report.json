@@ -1,0 +1,375 @@
+{
+  "candidate": {
+    "artifact_bundle_sha256": "07588049ad6f1f89ac34aff424b10dc72bb93baf2bd53854c76e4be9eaa31bd4",
+    "checkpoint_sha256": "1d5f7c7d47b9ecfdb67a85be36abef8a0f3013c96d037818083b34c0e76e17ef",
+    "configuration_sha256": "676d83bbed9790a8e7da0f3a5ef2b7c27f0fa4dba6fb48fc19b8b46da80616f2",
+    "dataset_fingerprint": "521316d3f395e4ef078cbb8c1eb3214b898ea5721183ff7b301ef088f0ff0109",
+    "optimizer_step": 7750,
+    "run_id": "baseline-v081-seed1337",
+    "seed": 1337
+  },
+  "checkpoint": {
+    "bytes": 129484726,
+    "path": "C:/Users/admactual/PokerGPT/runs/baseline-v081-seed1337/best.pt",
+    "sha256": "1d5f7c7d47b9ecfdb67a85be36abef8a0f3013c96d037818083b34c0e76e17ef"
+  },
+  "created_utc": "2026-07-24T08:59:35.095960+00:00",
+  "encoded_decision_targets": [
+    "RANGE_1_TO_1.5",
+    "ACTION_PASSIVE",
+    "ACTION_PASSIVE",
+    "ACTION_PASSIVE",
+    "ACTION_PASSIVE",
+    "ACTION_PASSIVE",
+    "ACTION_PASSIVE",
+    "ACTION_PASSIVE"
+  ],
+  "encoded_tokens": 252,
+  "environment": {
+    "device": "cuda",
+    "gpu": "NVIDIA RTX A4000",
+    "precision": "bf16",
+    "pytorch": "2.6.0+cu124"
+  },
+  "novelty_proof": {
+    "criterion": "exact equality of the complete encoded hero trajectory",
+    "decision_prefix_training_matches": [
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "exact_training_matches": 0,
+    "opponent_private_card_tokens_in_model_input": [],
+    "test_split_accessed": false,
+    "training_trajectories_searched": 50112
+  },
+  "predictions": [
+    {
+      "action_correct": true,
+      "board": [],
+      "legal": true,
+      "legality_reason": null,
+      "ordinal": 1,
+      "pot_bb": 1.5,
+      "predicted_action": "RAISE",
+      "predicted_amount_bb": 2.24,
+      "predicted_probability": 0.796875,
+      "predicted_token": "RANGE_1_TO_1.5",
+      "remaining_stack_bb": 100.0,
+      "street": "PREFLOP",
+      "to_call_bb": 1.0,
+      "token_correct": true,
+      "top_tokens": [
+        {
+          "probability": 0.796875,
+          "token": "RANGE_1_TO_1.5"
+        },
+        {
+          "probability": 0.201171875,
+          "token": "RANGE_1.5_TO_2"
+        },
+        {
+          "probability": 0.00191497802734375,
+          "token": "ACTION_FOLD"
+        }
+      ],
+      "truth_action": "RAISE",
+      "truth_amount_bb": 2.25,
+      "truth_probability": 0.796875,
+      "truth_token": "RANGE_1_TO_1.5"
+    },
+    {
+      "action_correct": false,
+      "board": [],
+      "legal": true,
+      "legality_reason": null,
+      "ordinal": 2,
+      "pot_bb": 13.0,
+      "predicted_action": "RAISE",
+      "predicted_amount_bb": 21.666666666666668,
+      "predicted_probability": 0.5390625,
+      "predicted_token": "RANGE_1.5_TO_2",
+      "remaining_stack_bb": 97.75,
+      "street": "PREFLOP",
+      "to_call_bb": 5.75,
+      "token_correct": false,
+      "top_tokens": [
+        {
+          "probability": 0.5390625,
+          "token": "RANGE_1.5_TO_2"
+        },
+        {
+          "probability": 0.14453125,
+          "token": "ACTION_PASSIVE"
+        },
+        {
+          "probability": 0.140625,
+          "token": "RANGE_1_TO_1.5"
+        }
+      ],
+      "truth_action": "CALL",
+      "truth_amount_bb": null,
+      "truth_probability": 0.14453125,
+      "truth_token": "ACTION_PASSIVE"
+    },
+    {
+      "action_correct": false,
+      "board": [
+        "Qh",
+        "7d",
+        "2c"
+      ],
+      "legal": true,
+      "legality_reason": null,
+      "ordinal": 3,
+      "pot_bb": 24.5,
+      "predicted_action": "BET",
+      "predicted_amount_bb": 12.233103448275862,
+      "predicted_probability": 0.44140625,
+      "predicted_token": "RANGE_0.25_TO_0.5",
+      "remaining_stack_bb": 92.0,
+      "street": "FLOP",
+      "to_call_bb": 0.0,
+      "token_correct": false,
+      "top_tokens": [
+        {
+          "probability": 0.44140625,
+          "token": "RANGE_0.25_TO_0.5"
+        },
+        {
+          "probability": 0.302734375,
+          "token": "ACTION_PASSIVE"
+        },
+        {
+          "probability": 0.1259765625,
+          "token": "RANGE_0.5_TO_0.75"
+        }
+      ],
+      "truth_action": "CHECK",
+      "truth_amount_bb": null,
+      "truth_probability": 0.302734375,
+      "truth_token": "ACTION_PASSIVE"
+    },
+    {
+      "action_correct": false,
+      "board": [
+        "Qh",
+        "7d",
+        "2c"
+      ],
+      "legal": true,
+      "legality_reason": null,
+      "ordinal": 4,
+      "pot_bb": 33.5,
+      "predicted_action": "FOLD",
+      "predicted_amount_bb": null,
+      "predicted_probability": 0.62109375,
+      "predicted_token": "ACTION_FOLD",
+      "remaining_stack_bb": 92.0,
+      "street": "FLOP",
+      "to_call_bb": 9.0,
+      "token_correct": false,
+      "top_tokens": [
+        {
+          "probability": 0.62109375,
+          "token": "ACTION_FOLD"
+        },
+        {
+          "probability": 0.294921875,
+          "token": "ACTION_PASSIVE"
+        },
+        {
+          "probability": 0.02734375,
+          "token": "RANGE_1_TO_1.5"
+        }
+      ],
+      "truth_action": "CALL",
+      "truth_amount_bb": null,
+      "truth_probability": 0.294921875,
+      "truth_token": "ACTION_PASSIVE"
+    },
+    {
+      "action_correct": true,
+      "board": [
+        "Qh",
+        "7d",
+        "2c",
+        "Tc"
+      ],
+      "legal": true,
+      "legality_reason": null,
+      "ordinal": 5,
+      "pot_bb": 42.5,
+      "predicted_action": "CHECK",
+      "predicted_amount_bb": null,
+      "predicted_probability": 0.8125,
+      "predicted_token": "ACTION_PASSIVE",
+      "remaining_stack_bb": 83.0,
+      "street": "TURN",
+      "to_call_bb": 0.0,
+      "token_correct": true,
+      "top_tokens": [
+        {
+          "probability": 0.8125,
+          "token": "ACTION_PASSIVE"
+        },
+        {
+          "probability": 0.06787109375,
+          "token": "ACTION_FOLD"
+        },
+        {
+          "probability": 0.03466796875,
+          "token": "RANGE_0.75_TO_1"
+        }
+      ],
+      "truth_action": "CHECK",
+      "truth_amount_bb": null,
+      "truth_probability": 0.8125,
+      "truth_token": "ACTION_PASSIVE"
+    },
+    {
+      "action_correct": true,
+      "board": [
+        "Qh",
+        "7d",
+        "2c",
+        "Tc"
+      ],
+      "legal": true,
+      "legality_reason": null,
+      "ordinal": 6,
+      "pot_bb": 64.5,
+      "predicted_action": "CALL",
+      "predicted_amount_bb": null,
+      "predicted_probability": 0.8984375,
+      "predicted_token": "ACTION_PASSIVE",
+      "remaining_stack_bb": 83.0,
+      "street": "TURN",
+      "to_call_bb": 22.0,
+      "token_correct": true,
+      "top_tokens": [
+        {
+          "probability": 0.8984375,
+          "token": "ACTION_PASSIVE"
+        },
+        {
+          "probability": 0.056640625,
+          "token": "ACTION_FOLD"
+        },
+        {
+          "probability": 0.0147705078125,
+          "token": "RANGE_1.5_TO_2"
+        }
+      ],
+      "truth_action": "CALL",
+      "truth_amount_bb": null,
+      "truth_probability": 0.8984375,
+      "truth_token": "ACTION_PASSIVE"
+    },
+    {
+      "action_correct": false,
+      "board": [
+        "Qh",
+        "7d",
+        "2c",
+        "Tc",
+        "3s"
+      ],
+      "legal": true,
+      "legality_reason": null,
+      "ordinal": 7,
+      "pot_bb": 86.5,
+      "predicted_action": "BET",
+      "predicted_amount_bb": 61.0,
+      "predicted_probability": 0.83984375,
+      "predicted_token": "ACTION_ALL_IN",
+      "remaining_stack_bb": 61.0,
+      "street": "RIVER",
+      "to_call_bb": 0.0,
+      "token_correct": false,
+      "top_tokens": [
+        {
+          "probability": 0.83984375,
+          "token": "ACTION_ALL_IN"
+        },
+        {
+          "probability": 0.078125,
+          "token": "ACTION_PASSIVE"
+        },
+        {
+          "probability": 0.05712890625,
+          "token": "ACTION_FOLD"
+        }
+      ],
+      "truth_action": "CHECK",
+      "truth_amount_bb": null,
+      "truth_probability": 0.078125,
+      "truth_token": "ACTION_PASSIVE"
+    },
+    {
+      "action_correct": false,
+      "board": [
+        "Qh",
+        "7d",
+        "2c",
+        "Tc",
+        "3s"
+      ],
+      "legal": true,
+      "legality_reason": null,
+      "ordinal": 8,
+      "pot_bb": 129.5,
+      "predicted_action": "FOLD",
+      "predicted_amount_bb": null,
+      "predicted_probability": 0.5,
+      "predicted_token": "ACTION_FOLD",
+      "remaining_stack_bb": 61.0,
+      "street": "RIVER",
+      "to_call_bb": 43.0,
+      "token_correct": false,
+      "top_tokens": [
+        {
+          "probability": 0.5,
+          "token": "ACTION_FOLD"
+        },
+        {
+          "probability": 0.2373046875,
+          "token": "ACTION_ALL_IN"
+        },
+        {
+          "probability": 0.1845703125,
+          "token": "ACTION_PASSIVE"
+        }
+      ],
+      "truth_action": "CALL",
+      "truth_amount_bb": null,
+      "truth_probability": 0.1845703125,
+      "truth_token": "ACTION_PASSIVE"
+    }
+  ],
+  "report_format_version": 1,
+  "report_id": "pokergpt-novel-synthetic-trajectory-v1",
+  "result": {
+    "action_correct": 3,
+    "decisions": 8,
+    "legal_predictions": 8,
+    "token_correct": 3
+  },
+  "scope_limit": "Teacher-forced evaluation of a newly authored legal trajectory; the authored line is not an optimal-poker or expected-value label.",
+  "synthetic_fixture": {
+    "hand_key": "1",
+    "hero_cards": [
+      "As",
+      "Qs"
+    ],
+    "hero_position": "HIJACK",
+    "hero_source_seat": 4,
+    "member": "synthetic/novel-20260724.phh",
+    "phh": "variant = 'NT'\nante_trimming_status = true\nantes = [0, 0, 0, 0, 0, 0]\nblinds_or_straddles = [50, 100, 0, 0, 0, 0]\nmin_bet = 100\nstarting_stacks = [10000, 10000, 10000, 10000, 10000, 10000]\nactions = ['d dh p1 8c6c', 'd dh p2 9s9d', 'd dh p3 Jh5h', 'd dh p4 AsQs', 'd dh p5 4d4c', 'd dh p6 KdKh', 'p3 f', 'p4 cbr 225', 'p5 f', 'p6 cc', 'p1 f', 'p2 cbr 800', 'p4 cc', 'p6 cc', 'd db Qh7d2c', 'p2 cc', 'p4 cc', 'p6 cbr 900', 'p2 f', 'p4 cc', 'd db Tc', 'p4 cc', 'p6 cbr 2200', 'p4 cc', 'd db 3s', 'p4 cc', 'p6 cbr 4300', 'p4 cc', 'p4 sm AsQs', 'p6 sm KdKh']\nhand = 20260724001\nplayers = ['synthetic1', 'synthetic2', 'synthetic3', 'synthetic4', 'synthetic5', 'synthetic6']\n"
+  }
+}
